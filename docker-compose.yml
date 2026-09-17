@@ -3,7 +3,7 @@ services:
     build: .
     restart: unless-stopped
     ports:
-      - "127.0.0.1:18080:8080"
+      - "100.86.191.16:18080:8080"
     env_file: .env
     volumes:
       - clips-data:/data
