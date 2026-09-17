@@ -5,12 +5,17 @@ import json
 import mimetypes
 import os
 import secrets
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import FastAPI, File, Header, HTTPException, Response, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
 
+
+ADMIN_LOGIN_HTML = """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FTHR Clips · Admin login</title><style>body{background:#090a0c;color:#f5f7f8;font:16px system-ui;display:grid;place-items:center;min-height:100vh}main{width:min(380px,calc(100% - 40px));border:1px solid #242a31;border-radius:16px;padding:30px;background:#111419}input,button{width:100%;padding:12px;border-radius:8px;margin-top:12px}input{background:#090a0c;border:1px solid #242a31;color:white}button{background:#c9f36b;border:0;cursor:pointer}</style></head><body><main><p>FTHR CLIPS / ADMIN</p><h1>Sign in</h1><form id="f"><input id="p" type="password" placeholder="Admin password" autofocus><button>Continue</button></form><p id="e"></p><script>f.onsubmit=async e=>{e.preventDefault();let r=await fetch('/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:p.value})});if(r.ok){location='/admin/dashboard'}else{document.querySelector('#e').textContent='Invalid password'}}</script></main></body></html>"""
+
+ADMIN_HTML = """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FTHR Clips · Admin</title><style>body{background:#090a0c;color:#f5f7f8;font:16px system-ui;margin:0;padding:40px}main{max-width:900px;margin:auto}h1{font-size:42px}button{background:#c9f36b;border:0;padding:10px 14px;border-radius:8px;cursor:pointer}.clip{border:1px solid #242a31;padding:14px;margin:10px 0;border-radius:10px;display:flex;justify-content:space-between;gap:12px;align-items:center}</style></head><body><main><p>FTHR CLIPS / ADMIN</p><h1>Manage your clips</h1><div id="clips">Loading…</div><script>let csrf='';async function load(){const r=await fetch('/admin/api/clips');const d=await r.json();document.querySelector('#clips').innerHTML=d.clips.map(c=>`<div class="clip"><span>${c.name} · ${c.size}</span><span><button onclick="setListed('${c.id}',${c.listed!==false})">${c.listed===false?'List':'Unlist'}</button> <button onclick="delClip('${c.id}')">Delete</button></span></div>`).join('')}async function setListed(id,current){await fetch('/admin/api/clips/'+id,{method:'PATCH',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({listed:!current})});load()}async function delClip(id){if(confirm('Delete this clip permanently?')){await fetch('/admin/api/clips/'+id,{method:'DELETE',headers:{'X-CSRF-Token':csrf}});load()}}fetch('/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:prompt('Admin password')})}).then(r=>r.json()).then(d=>{csrf=d.csrf;load()})</script></main></body></html>"""
 
 GALLERY_HTML = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -32,17 +37,87 @@ def _format_size(size: int) -> str:
     return f"{size / (1024 * 1024):.1f} MB"
 
 
-def create_app(storage_dir: str | Path = "/data", token: str | None = None, public_base_url: str = "", max_upload_bytes: int = 524_288_000) -> FastAPI:
+def create_app(storage_dir: str | Path = "/data", token: str | None = None, public_base_url: str = "", max_upload_bytes: int = 524_288_000, admin_password: str | None = None, upload_limit: int = 30) -> FastAPI:
     storage = Path(storage_dir)
     storage.mkdir(parents=True, exist_ok=True)
     expected_token = token if token is not None else os.environ.get("UPLOAD_TOKEN", "")
     if not expected_token:
         raise ValueError("UPLOAD_TOKEN is required")
     app = FastAPI(title="FTHR Clips Server", docs_url=None, redoc_url=None)
+    expected_admin = admin_password if admin_password is not None else os.environ.get("ADMIN_PASSWORD", "")
+    sessions: dict[str, tuple[str, float]] = {}
+    upload_timestamps: list[float] = []
+    login_timestamps: list[float] = []
 
     def authorize(authorization: str | None) -> None:
         if not authorization or not secrets.compare_digest(authorization, f"Bearer {expected_token}"):
             raise HTTPException(status_code=401, detail="Unauthorized")
+
+    def admin_session(cookie: str | None) -> tuple[str, str]:
+        session = sessions.get(cookie or "")
+        if not session or session[1] < time.time():
+            raise HTTPException(status_code=401, detail="Admin login required")
+        return cookie or "", session[0]
+
+    def require_csrf(request_csrf: str | None, expected: str) -> None:
+        if not request_csrf or not secrets.compare_digest(request_csrf, expected):
+            raise HTTPException(status_code=403, detail="CSRF check failed")
+
+    @app.post("/admin/login")
+    def admin_login(payload: dict[str, str], response: Response) -> dict[str, str]:
+        now = time.time()
+        login_timestamps[:] = [stamp for stamp in login_timestamps if stamp > now - 60]
+        if len(login_timestamps) >= 10:
+            raise HTTPException(status_code=429, detail="Login rate limit exceeded")
+        login_timestamps.append(now)
+        if not expected_admin or not secrets.compare_digest(payload.get("password", ""), expected_admin):
+            raise HTTPException(status_code=401, detail="Invalid admin password")
+        session_id, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(24)
+        sessions[session_id] = (csrf, time.time() + 8 * 3600)
+        response.set_cookie("fthr_admin", session_id, httponly=True, secure=False, samesite="strict", max_age=8 * 3600)
+        return {"csrf": csrf}
+
+    @app.post("/admin/logout")
+    def admin_logout(request_cookie: str | None = Header(default=None, alias="Cookie")) -> dict[str, str]:
+        if request_cookie:
+            sessions.pop(request_cookie, None)
+        return {"status": "ok"}
+
+    @app.get("/admin", response_class=HTMLResponse)
+    def admin_login_page() -> str:
+        return ADMIN_LOGIN_HTML
+
+    @app.get("/admin/dashboard", response_class=HTMLResponse)
+    def admin_dashboard(request_cookie: str | None = Header(default=None, alias="Cookie")) -> str:
+        admin_session(request_cookie.split("fthr_admin=", 1)[1].split(";", 1)[0] if request_cookie and "fthr_admin=" in request_cookie else None)
+        return ADMIN_HTML
+
+    @app.get("/admin/api/session")
+    def admin_session_check(request_cookie: str | None = Header(default=None, alias="Cookie")) -> dict[str, bool]:
+        admin_session(request_cookie.split("fthr_admin=", 1)[1].split(";", 1)[0] if request_cookie and "fthr_admin=" in request_cookie else None)
+        return {"authenticated": True}
+
+    @app.get("/admin/api/clips")
+    def admin_clips(request_cookie: str | None = Header(default=None, alias="Cookie")) -> dict[str, list[dict[str, str]]]:
+        session_id = request_cookie.split("fthr_admin=", 1)[1].split(";", 1)[0] if request_cookie and "fthr_admin=" in request_cookie else None
+        admin_session(session_id)
+        return list_clips(include_unlisted=True)
+
+    @app.patch("/admin/api/clips/{identifier}")
+    def update_clip(identifier: str, payload: dict[str, bool], request_cookie: str | None = Header(default=None, alias="Cookie"), csrf: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict[str, str]:
+        session_id = request_cookie.split("fthr_admin=", 1)[1].split(";", 1)[0] if request_cookie and "fthr_admin=" in request_cookie else None
+        _, expected_csrf = admin_session(session_id); require_csrf(csrf, expected_csrf)
+        metadata_path = storage / f"{identifier}.json"
+        if not metadata_path.exists(): raise HTTPException(status_code=404, detail="Not found")
+        metadata = json.loads(metadata_path.read_text()); metadata["listed"] = bool(payload.get("listed", True)); metadata_path.write_text(json.dumps(metadata))
+        return {"status": "ok"}
+
+    @app.delete("/admin/api/clips/{identifier}")
+    def delete_clip(identifier: str, request_cookie: str | None = Header(default=None, alias="Cookie"), csrf: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict[str, str]:
+        session_id = request_cookie.split("fthr_admin=", 1)[1].split(";", 1)[0] if request_cookie and "fthr_admin=" in request_cookie else None
+        _, expected_csrf = admin_session(session_id); require_csrf(csrf, expected_csrf)
+        (storage / identifier).unlink(missing_ok=True); (storage / f"{identifier}.json").unlink(missing_ok=True)
+        return {"status": "deleted"}
 
     @app.get("/", response_class=HTMLResponse)
     def gallery() -> str:
@@ -52,8 +127,7 @@ def create_app(storage_dir: str | Path = "/data", token: str | None = None, publ
     def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
-    @app.get("/api/clips")
-    def clips() -> dict[str, list[dict[str, str]]]:
+    def list_clips(include_unlisted: bool = False) -> dict[str, list[dict[str, str]]]:
         base = public_base_url.rstrip("/")
         items = []
         for target in storage.iterdir():
@@ -61,11 +135,17 @@ def create_app(storage_dir: str | Path = "/data", token: str | None = None, publ
                 continue
             metadata_path = target.with_name(f"{target.name}.json")
             metadata = json.loads(metadata_path.read_text()) if metadata_path.exists() else {}
+            if not include_unlisted and metadata.get("listed", True) is False:
+                continue
             content_type = metadata.get("content_type") or mimetypes.guess_type(metadata.get("name", ""))[0] or "application/octet-stream"
             created = datetime.fromtimestamp(target.stat().st_mtime, timezone.utc).strftime("%d %b %Y")
-            items.append({"id": target.name, "name": metadata.get("name", target.name), "url": f"{base}/files/{target.name}", "size": _format_size(target.stat().st_size), "created": created, "extension": Path(metadata.get("name", target.name)).suffix.lstrip(".").upper() or "FILE", "content_type": content_type})
+            items.append({"id": target.name, "name": metadata.get("name", target.name), "url": f"{base}/files/{target.name}", "size": _format_size(target.stat().st_size), "created": created, "extension": Path(metadata.get("name", target.name)).suffix.lstrip(".").upper() or "FILE", "content_type": content_type, "listed": str(metadata.get("listed", True)).lower()})
         items.sort(key=lambda item: item["created"], reverse=True)
         return {"clips": items}
+
+    @app.get("/api/clips")
+    def clips() -> dict[str, list[dict[str, str]]]:
+        return list_clips()
 
     @app.head("/upload")
     def upload_probe(authorization: str | None = Header(default=None)) -> None:
@@ -74,6 +154,11 @@ def create_app(storage_dir: str | Path = "/data", token: str | None = None, publ
     @app.post("/upload")
     async def upload(clip: UploadFile = File(...), authorization: str | None = Header(default=None)) -> dict[str, str]:
         authorize(authorization)
+        now = time.time()
+        upload_timestamps[:] = [stamp for stamp in upload_timestamps if stamp > now - 60]
+        if len(upload_timestamps) >= upload_limit:
+            raise HTTPException(status_code=429, detail="Upload rate limit exceeded")
+        upload_timestamps.append(now)
         if not clip.filename:
             raise HTTPException(status_code=400, detail="A clip filename is required")
         identifier = secrets.token_urlsafe(18)
@@ -86,7 +171,7 @@ def create_app(storage_dir: str | Path = "/data", token: str | None = None, publ
                     if size > max_upload_bytes:
                         raise HTTPException(status_code=413, detail="Upload is too large")
                     output.write(chunk)
-            target.with_name(f"{identifier}.json").write_text(json.dumps({"name": Path(clip.filename).name, "content_type": clip.content_type or "application/octet-stream"}))
+            target.with_name(f"{identifier}.json").write_text(json.dumps({"name": Path(clip.filename).name, "content_type": clip.content_type or "application/octet-stream", "listed": True}))
         except HTTPException:
             target.unlink(missing_ok=True)
             raise
@@ -94,7 +179,7 @@ def create_app(storage_dir: str | Path = "/data", token: str | None = None, publ
             target.unlink(missing_ok=True)
             raise HTTPException(status_code=500, detail="Could not store upload") from exc
         base = public_base_url.rstrip("/")
-        return {"url": f"{base}/files/{identifier}", "id": identifier, "bytes": str(size)}
+        return {"url": f"{base}/files/{identifier}", "id": identifier, "bytes": str(size), "listed": "true"}
 
     @app.get("/files/{identifier}")
     def download(identifier: str) -> FileResponse:

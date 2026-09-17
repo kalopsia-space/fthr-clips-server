@@ -29,7 +29,8 @@ The token is entered on the desktop client and must not be committed to this rep
 
 ## Configuration
 
-- `UPLOAD_TOKEN` — required bearer token.
+- `UPLOAD_TOKEN` — required bearer token/API key for FTHR Clips uploads.
+- `ADMIN_PASSWORD` — required password for the protected `/admin` dashboard.
 - `STORAGE_DIR` — directory for uploaded files; defaults to `/data` in the container.
 - `PUBLIC_BASE_URL` — optional public URL used in returned links. If unset, the request's `Host` and scheme are used.
 - `MAX_UPLOAD_BYTES` — maximum upload size; defaults to 524288000 (500 MiB).
@@ -41,7 +42,9 @@ The token is entered on the desktop client and must not be committed to this rep
 - `POST /upload` — authenticated multipart upload; field name must be `clip`.
 - `GET /files/<id>` — download an uploaded file.
 - `GET /` — responsive clip gallery with previews and copy-link controls.
-- `GET /api/clips` — gallery metadata endpoint.
+- `GET /api/clips` — gallery metadata endpoint; only listed clips appear.
+- `GET /admin` — password-protected admin login.
+- `GET /admin/dashboard` — authenticated dashboard for listing, unlisting, and deleting clips.
 - `GET /healthz` — basic health check.
 
 Successful upload response:
