@@ -2,7 +2,7 @@
 
 A small, self-hosted upload server for the **Your server** provider in [FTHR Clips](https://github.com/FTHR-Community/FTHR-Clips).
 
-It accepts authenticated `multipart/form-data` uploads in the `clip` field and returns a shareable URL. It is intentionally simple, private-by-default, and suitable for running behind an HTTPS reverse proxy.
+It accepts authenticated `multipart/form-data` uploads in the `clip` field, returns a shareable URL, and provides a polished responsive gallery at `/` for browsing and sharing stored clips. It is intentionally simple, private-by-default, and suitable for running behind an HTTPS reverse proxy.
 
 ## Quick start with Docker
 
@@ -40,6 +40,8 @@ The token is entered on the desktop client and must not be committed to this rep
 - `HEAD /upload` — connection test.
 - `POST /upload` — authenticated multipart upload; field name must be `clip`.
 - `GET /files/<id>` — download an uploaded file.
+- `GET /` — responsive clip gallery with previews and copy-link controls.
+- `GET /api/clips` — gallery metadata endpoint.
 - `GET /healthz` — basic health check.
 
 Successful upload response:
