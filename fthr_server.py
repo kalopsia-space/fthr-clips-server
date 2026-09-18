@@ -69,7 +69,7 @@ def create_app(storage_dir: str | Path = "/data", token: str | None = None, publ
             raise HTTPException(status_code=403, detail="CSRF check failed")
 
     @app.post("/admin/login")
-    def admin_login(payload: dict[str, str], response: Response) -> dict[str, str]:
+    def admin_login(payload: dict[str, str], request: Request, response: Response) -> dict[str, str]:
         now = time.time()
         login_timestamps[:] = [stamp for stamp in login_timestamps if stamp > now - 60]
         if len(login_timestamps) >= 10:
@@ -79,7 +79,8 @@ def create_app(storage_dir: str | Path = "/data", token: str | None = None, publ
             raise HTTPException(status_code=401, detail="Invalid admin password")
         session_id, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(24)
         sessions[session_id] = (csrf, time.time() + 8 * 3600)
-        response.set_cookie("fthr_admin", session_id, httponly=True, secure=False, samesite="strict", max_age=8 * 3600)
+        is_https = request.url.scheme == "https" or request.headers.get("x-forwarded-proto", "").split(",")[0].strip().lower() == "https"
+        response.set_cookie("fthr_admin", session_id, httponly=True, secure=is_https, samesite="strict", max_age=8 * 3600)
         return {"csrf": csrf}
 
     @app.post("/admin/logout")
