@@ -3,7 +3,7 @@ services:
     build: .
     restart: unless-stopped
     ports:
-      - "100.86.191.16:18080:8080"
+      - "127.0.0.1:18080:8080"
     env_file: .env
     mem_limit: 1g
     pids_limit: 128
