@@ -5,6 +5,8 @@ services:
     ports:
       - "100.86.191.16:18080:8080"
     env_file: .env
+    mem_limit: 1g
+    pids_limit: 128
     volumes:
       - clips-data:/data
     user: "10001:10001"

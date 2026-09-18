@@ -29,6 +29,27 @@ def test_admin_login_and_unlisted_clip_management(tmp_path: Path):
     assert client.get(f"/files/{identifier}").status_code == 404
 
 
+def test_admin_can_relist_and_escapes_filename(tmp_path: Path):
+    client = TestClient(create_app(tmp_path, "upload-key", admin_password="admin-pass"))
+    uploaded = client.post("/upload", headers={"Authorization": "Bearer upload-key"}, files={"clip": ("<img src=x onerror=alert(1)>.mp4", b"video")})
+    identifier = uploaded.json()["id"]
+    client.post("/admin/login", json={"password": "admin-pass"})
+    csrf = client.get("/admin/api/csrf").json()["csrf"]
+    client.patch(f"/admin/api/clips/{identifier}", headers={"X-CSRF-Token": csrf}, json={"listed": False})
+    client.patch(f"/admin/api/clips/{identifier}", headers={"X-CSRF-Token": csrf}, json={"listed": True})
+    dashboard = client.get("/admin/dashboard")
+    assert "innerHTML=d" not in dashboard.text
+    assert client.get("/api/clips").json()["clips"][0]["listed"] is True
+
+
+def test_logout_invalidates_admin_session(tmp_path: Path):
+    client = TestClient(create_app(tmp_path, "upload-key", admin_password="admin-pass"))
+    client.post("/admin/login", json={"password": "admin-pass"})
+    assert client.get("/admin/api/session").status_code == 200
+    assert client.post("/admin/logout").status_code == 200
+    assert client.get("/admin/api/session").status_code == 401
+
+
 def test_admin_dashboard_is_gated(tmp_path: Path):
     client = TestClient(create_app(tmp_path, "upload-key", admin_password="admin-pass"))
     assert client.get("/admin").status_code == 200

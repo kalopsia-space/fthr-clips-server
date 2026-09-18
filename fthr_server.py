@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import html
 import json
 import mimetypes
@@ -7,15 +9,17 @@ import os
 import secrets
 import time
 from datetime import datetime, timezone
+from http.cookies import SimpleCookie
 from pathlib import Path
+import re
 
-from fastapi import FastAPI, File, Header, HTTPException, Response, UploadFile
+from fastapi import FastAPI, File, Header, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
 
 
 ADMIN_LOGIN_HTML = """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FTHR Clips · Admin login</title><style>body{background:#090a0c;color:#f5f7f8;font:16px system-ui;display:grid;place-items:center;min-height:100vh}main{width:min(380px,calc(100% - 40px));border:1px solid #242a31;border-radius:16px;padding:30px;background:#111419}input,button{width:100%;padding:12px;border-radius:8px;margin-top:12px}input{background:#090a0c;border:1px solid #242a31;color:white}button{background:#c9f36b;border:0;cursor:pointer}</style></head><body><main><p>FTHR CLIPS / ADMIN</p><h1>Sign in</h1><form id="f"><input id="p" type="password" placeholder="Admin password" autofocus><button>Continue</button></form><p id="e"></p><script>f.onsubmit=async e=>{e.preventDefault();let r=await fetch('/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:p.value})});if(r.ok){location='/admin/dashboard'}else{document.querySelector('#e').textContent='Invalid password'}}</script></main></body></html>"""
 
-ADMIN_HTML = """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FTHR Clips · Admin</title><style>body{background:#090a0c;color:#f5f7f8;font:16px system-ui;margin:0;padding:40px}main{max-width:900px;margin:auto}h1{font-size:42px}button{background:#c9f36b;border:0;padding:10px 14px;border-radius:8px;cursor:pointer}.clip{border:1px solid #242a31;padding:14px;margin:10px 0;border-radius:10px;display:flex;justify-content:space-between;gap:12px;align-items:center}</style></head><body><main><p>FTHR CLIPS / ADMIN</p><h1>Manage your clips</h1><div id="clips">Loading…</div><script>let csrf='';async function load(){const r=await fetch('/admin/api/clips');const d=await r.json();document.querySelector('#clips').innerHTML=d.clips.map(c=>`<div class="clip"><span>${c.name} · ${c.size}</span><span><button onclick="setListed('${c.id}',${c.listed!==false})">${c.listed===false?'List':'Unlist'}</button> <button onclick="delClip('${c.id}')">Delete</button></span></div>`).join('')}async function setListed(id,current){await fetch('/admin/api/clips/'+id,{method:'PATCH',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({listed:!current})});load()}async function delClip(id){if(confirm('Delete this clip permanently?')){await fetch('/admin/api/clips/'+id,{method:'DELETE',headers:{'X-CSRF-Token':csrf}});load()}}fetch('/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:prompt('Admin password')})}).then(r=>r.json()).then(d=>{csrf=d.csrf;load()})</script></main></body></html>"""
+ADMIN_HTML = """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FTHR Clips · Admin</title><style>body{background:#090a0c;color:#f5f7f8;font:16px system-ui;margin:0;padding:40px}main{max-width:900px;margin:auto}h1{font-size:42px}button{background:#c9f36b;border:0;padding:10px 14px;border-radius:8px;cursor:pointer}.clip{border:1px solid #242a31;padding:14px;margin:10px 0;border-radius:10px;display:flex;justify-content:space-between;gap:12px;align-items:center}.muted{color:#8b949e}</style></head><body><main><p>FTHR CLIPS / ADMIN</p><h1>Manage your clips</h1><p class="muted">Visibility and deletion controls for your library.</p><div id="clips">Loading…</div><script>let csrf='';const esc=s=>String(s).replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#039;'}[c]));async function load(){const r=await fetch('/admin/api/clips');if(!r.ok){location='/admin';return}const d=await r.json(),root=document.querySelector('#clips');root.replaceChildren();d.clips.forEach(c=>{const row=document.createElement('div');row.className='clip';const info=document.createElement('span');info.textContent=`${c.name} · ${c.size}`;const actions=document.createElement('span');const toggle=document.createElement('button');toggle.textContent=c.listed?'Unlist':'List';toggle.onclick=()=>setListed(c.id,c.listed);const del=document.createElement('button');del.textContent='Delete';del.onclick=()=>delClip(c.id);actions.append(toggle,' ',del);row.append(info,actions);root.append(row)})}async function setListed(id,current){await fetch('/admin/api/clips/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({listed:!current})});load()}async function delClip(id){if(confirm('Delete this clip permanently?')){await fetch('/admin/api/clips/'+encodeURIComponent(id),{method:'DELETE',headers:{'X-CSRF-Token':csrf}});load()}}fetch('/admin/api/session').then(r=>r.ok?r.json():Promise.reject()).then(()=>fetch('/admin/api/csrf')).then(r=>r.json()).then(d=>{csrf=d.csrf;load()}).catch(()=>location='/admin');</script></main></body></html>"""
 
 GALLERY_HTML = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -79,8 +83,9 @@ def create_app(storage_dir: str | Path = "/data", token: str | None = None, publ
 
     @app.post("/admin/logout")
     def admin_logout(request_cookie: str | None = Header(default=None, alias="Cookie")) -> dict[str, str]:
-        if request_cookie:
-            sessions.pop(request_cookie, None)
+        session_id = cookie_session(request_cookie)
+        if session_id:
+            sessions.pop(session_id, None)
         return {"status": "ok"}
 
     @app.get("/admin", response_class=HTMLResponse)
@@ -89,23 +94,31 @@ def create_app(storage_dir: str | Path = "/data", token: str | None = None, publ
 
     @app.get("/admin/dashboard", response_class=HTMLResponse)
     def admin_dashboard(request_cookie: str | None = Header(default=None, alias="Cookie")) -> str:
-        admin_session(request_cookie.split("fthr_admin=", 1)[1].split(";", 1)[0] if request_cookie and "fthr_admin=" in request_cookie else None)
+        admin_session(cookie_session(request_cookie))
         return ADMIN_HTML
+
+    def cookie_session(request_cookie: str | None) -> str | None:
+        cookies = SimpleCookie(request_cookie or "")
+        return cookies.get("fthr_admin").value if cookies.get("fthr_admin") else None
 
     @app.get("/admin/api/session")
     def admin_session_check(request_cookie: str | None = Header(default=None, alias="Cookie")) -> dict[str, bool]:
-        admin_session(request_cookie.split("fthr_admin=", 1)[1].split(";", 1)[0] if request_cookie and "fthr_admin=" in request_cookie else None)
+        admin_session(cookie_session(request_cookie))
         return {"authenticated": True}
 
+    @app.get("/admin/api/csrf")
+    def admin_csrf(request_cookie: str | None = Header(default=None, alias="Cookie")) -> dict[str, str]:
+        _, csrf = admin_session(cookie_session(request_cookie))
+        return {"csrf": csrf}
+
     @app.get("/admin/api/clips")
-    def admin_clips(request_cookie: str | None = Header(default=None, alias="Cookie")) -> dict[str, list[dict[str, str]]]:
-        session_id = request_cookie.split("fthr_admin=", 1)[1].split(";", 1)[0] if request_cookie and "fthr_admin=" in request_cookie else None
-        admin_session(session_id)
+    def admin_clips(request_cookie: str | None = Header(default=None, alias="Cookie")) -> dict[str, list[dict[str, Any]]]:
+        admin_session(cookie_session(request_cookie))
         return list_clips(include_unlisted=True)
 
     @app.patch("/admin/api/clips/{identifier}")
     def update_clip(identifier: str, payload: dict[str, bool], request_cookie: str | None = Header(default=None, alias="Cookie"), csrf: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict[str, str]:
-        session_id = request_cookie.split("fthr_admin=", 1)[1].split(";", 1)[0] if request_cookie and "fthr_admin=" in request_cookie else None
+        session_id = cookie_session(request_cookie)
         _, expected_csrf = admin_session(session_id); require_csrf(csrf, expected_csrf)
         metadata_path = storage / f"{identifier}.json"
         if not metadata_path.exists(): raise HTTPException(status_code=404, detail="Not found")
@@ -114,10 +127,19 @@ def create_app(storage_dir: str | Path = "/data", token: str | None = None, publ
 
     @app.delete("/admin/api/clips/{identifier}")
     def delete_clip(identifier: str, request_cookie: str | None = Header(default=None, alias="Cookie"), csrf: str | None = Header(default=None, alias="X-CSRF-Token")) -> dict[str, str]:
-        session_id = request_cookie.split("fthr_admin=", 1)[1].split(";", 1)[0] if request_cookie and "fthr_admin=" in request_cookie else None
+        session_id = cookie_session(request_cookie)
         _, expected_csrf = admin_session(session_id); require_csrf(csrf, expected_csrf)
         (storage / identifier).unlink(missing_ok=True); (storage / f"{identifier}.json").unlink(missing_ok=True)
         return {"status": "deleted"}
+
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["Content-Security-Policy"] = "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; media-src 'self'; script-src 'self' 'unsafe-inline'"
+        return response
 
     @app.get("/", response_class=HTMLResponse)
     def gallery() -> str:
@@ -127,7 +149,7 @@ def create_app(storage_dir: str | Path = "/data", token: str | None = None, publ
     def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
-    def list_clips(include_unlisted: bool = False) -> dict[str, list[dict[str, str]]]:
+    def list_clips(include_unlisted: bool = False) -> dict[str, list[dict[str, Any]]]:
         base = public_base_url.rstrip("/")
         items = []
         for target in storage.iterdir():
@@ -139,12 +161,12 @@ def create_app(storage_dir: str | Path = "/data", token: str | None = None, publ
                 continue
             content_type = metadata.get("content_type") or mimetypes.guess_type(metadata.get("name", ""))[0] or "application/octet-stream"
             created = datetime.fromtimestamp(target.stat().st_mtime, timezone.utc).strftime("%d %b %Y")
-            items.append({"id": target.name, "name": metadata.get("name", target.name), "url": f"{base}/files/{target.name}", "size": _format_size(target.stat().st_size), "created": created, "extension": Path(metadata.get("name", target.name)).suffix.lstrip(".").upper() or "FILE", "content_type": content_type, "listed": str(metadata.get("listed", True)).lower()})
+            items.append({"id": target.name, "name": metadata.get("name", target.name), "url": f"{base}/files/{target.name}", "size": _format_size(target.stat().st_size), "created": created, "extension": Path(metadata.get("name", target.name)).suffix.lstrip(".").upper() or "FILE", "content_type": content_type, "listed": bool(metadata.get("listed", True))})
         items.sort(key=lambda item: item["created"], reverse=True)
         return {"clips": items}
 
     @app.get("/api/clips")
-    def clips() -> dict[str, list[dict[str, str]]]:
+    def clips() -> dict[str, list[dict[str, Any]]]:
         return list_clips()
 
     @app.head("/upload")
@@ -183,10 +205,10 @@ def create_app(storage_dir: str | Path = "/data", token: str | None = None, publ
 
     @app.get("/files/{identifier}")
     def download(identifier: str) -> FileResponse:
-        if not identifier.isalnum() and "-" not in identifier and "_" not in identifier:
+        if not re.fullmatch(r"[A-Za-z0-9_-]{20,32}", identifier):
             raise HTTPException(status_code=404, detail="Not found")
         target = storage / identifier
-        if not target.is_file() or target.parent != storage:
+        if target.is_symlink() or not target.is_file() or target.resolve().parent != storage.resolve():
             raise HTTPException(status_code=404, detail="Not found")
         metadata_path = target.with_name(f"{identifier}.json")
         metadata = json.loads(metadata_path.read_text()) if metadata_path.exists() else {}
