@@ -18,6 +18,8 @@ enum Cmd {
     Check,
     /// Scan the configured folders once, print the report and exit
     Scan,
+    /// Import files from the old Python service's data dir and exit
+    ImportLegacy,
 }
 
 #[tokio::main]
@@ -34,6 +36,7 @@ async fn main() -> anyhow::Result<()> {
         Cmd::Serve => app::serve(config).await,
         Cmd::Check => check(config).await,
         Cmd::Scan => scan(config).await,
+        Cmd::ImportLegacy => import_legacy(config).await,
         Cmd::HashPassword => unreachable!("handled above"),
     }
 }
@@ -94,5 +97,17 @@ async fn scan(config: Config) -> anyhow::Result<()> {
     let state = AppState::new(config, db, settings);
     let report = Scanner::new(state).run_once().await?;
     println!("{}", serde_json::to_string_pretty(&report)?);
+    Ok(())
+}
+
+async fn import_legacy(config: Config) -> anyhow::Result<()> {
+    use fthr_clips_server::{app::AppState, db::Db, settings::SettingsStore};
+    use std::sync::Arc;
+    std::fs::create_dir_all(&config.data_dir)?;
+    let db = Db::open(&config.data_dir.join("library.db")).await?;
+    let settings = Arc::new(SettingsStore::load(&db, &config).await?);
+    let state = AppState::new(config, db, settings);
+    let report = fthr_clips_server::legacy::import(&state).await?;
+    println!("imported: {}\nskipped: {}", report.imported, report.skipped);
     Ok(())
 }

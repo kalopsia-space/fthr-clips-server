@@ -300,6 +300,7 @@ pub async fn store_upload(state: &AppState, mut field: Field<'_>) -> Result<Medi
             .unwrap_or_default(),
         public: settings.upload_default_public,
         recorded_at: recorded_at_from_name(&final_name),
+        created_at: None,
     };
     if let Err(e) = media::insert(&state.db, &new).await {
         // A concurrent identical upload may have won the race.
@@ -330,11 +331,11 @@ pub(crate) fn safe_folder(folder: &str) -> PathBuf {
     }
 }
 
-fn basename(name: &str) -> String {
+pub(crate) fn basename(name: &str) -> String {
     name.rsplit(['/', '\\']).next().unwrap_or("").to_string()
 }
 
-fn sanitise_name(original: &str, id: &str, ext: &str) -> String {
+pub(crate) fn sanitise_name(original: &str, id: &str, ext: &str) -> String {
     let kept: String = basename(original)
         .chars()
         .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | ' '))
@@ -362,7 +363,7 @@ fn sanitise_name(original: &str, id: &str, ext: &str) -> String {
 
 /// Atomically claims a free name in `dir` for the file at `temp`, suffixing
 /// `-2`, `-3`... on clash. The temp file is removed once the name is claimed.
-async fn claim_path(dir: &Path, name: &str, temp: &Path) -> std::io::Result<PathBuf> {
+pub(crate) async fn claim_path(dir: &Path, name: &str, temp: &Path) -> std::io::Result<PathBuf> {
     let p = Path::new(name);
     let stem = p
         .file_stem()

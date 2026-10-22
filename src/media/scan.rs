@@ -262,6 +262,7 @@ impl Scanner {
                 .unwrap_or_default(),
             public: false,
             recorded_at: recorded_at_from_name(&name),
+            created_at: None,
         };
         media::insert(&state.db, &new).await?;
         if let Some(row) = media::get(&state.db, &id).await? {
