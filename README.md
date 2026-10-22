@@ -1,154 +1,120 @@
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/logo-dark.png">
+  <img src="docs/images/logo-light.png" alt="FTHR Clips" width="96">
+</picture>
+
 # FTHR Clips Server
 
-A self-hosted clip sharing server for the FTHR desktop app: upload videos and images, get a link, browse a library, and optionally transcode for playback everywhere. A single Rust binary with an embedded SQLite database.
+**Your own clip site. One binary, one folder, your rules.**
 
-> Built by FTHR's linux branch maintainer; not an official FTHR Community release.
+Upload from the FTHR Clips desktop app, get a link that unfurls in Discord, and browse everything you've ever captured in a library that looks like the app you recorded it with.
 
-## Features
+[![CI](https://github.com/kalopsia-space/fthr-clips-server/actions/workflows/ci.yml/badge.svg)](https://github.com/kalopsia-space/fthr-clips-server/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/kalopsia-space/fthr-clips-server?include_prereleases&label=release)](https://github.com/kalopsia-space/fthr-clips-server/releases)
+[![Docker](https://img.shields.io/badge/ghcr.io-fthr--clips--server-2496ED?logo=docker&logoColor=white)](https://github.com/kalopsia-space/fthr-clips-server/pkgs/container/fthr-clips-server)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-20e3a0)](LICENSE)
 
-- Upload endpoint for the FTHR desktop app (`POST /upload`, bearer token auth).
-- Public library of videos and images with tags, search, sorting, thumbnails and an RSS feed (`/feed.rss`).
-- Clip and image pages (`/w/<slug>`, `/i/<slug>`) with link previews.
-- Admin area (`/admin`) for files, tags, library, transcoding, sharing, integrations and upload tokens.
-- Optional transcoding to a web-compatible 720p rendition, with automatic encoder detection.
-- Scan folders: index existing video and image folders without copying them.
-- Discord and generic webhooks when a clip is first made public.
-- One-command import from the old Python version; old `/files/` links keep working.
-- Small static Linux binaries (x86_64 and aarch64, musl) plus a multi-arch Docker image. Linux and Docker are the supported platforms.
+[Quick start](#quick-start) · [How it works](#how-it-works) · [Docs](docs/README.md) · [Desktop app setup](docs/desktop-app.md)
+
+</div>
+
+> Built by FTHR's Linux branch maintainer as a side project. Not an official FTHR Community release.
+
+---
+
+## Why this exists
+
+Clip hosts come and go, links rot, and the free tiers compress your 1440p ace into soup. FTHR Clips Server is the "Your server" option in the desktop app's upload menu, grown into a real home for your clips:
+
+- **It's yours.** Runs on a Raspberry Pi, an old laptop, a free Oracle ARM box or any VPS. Your files stay on your disk.
+- **It just works with the app.** Point FTHR Clips at it once; every upload comes back with a share link.
+- **Links look good.** Paste one in Discord and the clip plays inline, with a poster and title.
+- **It stays out of the way.** No database server, no Node, no build step. Install `ffmpeg` if you want thumbnails and transcoding; skip it and everything still serves.
+
+## What you get
+
+| | |
+|---|---|
+| **A library you'll actually browse** | Clips grouped by day, posters that play on hover, tags, search and sort, a separate screenshots view. Styled after the FTHR Clips 2.0 desktop UI: near-black green surfaces, mint accent, Oswald type. |
+| **Share pages that embed** | Every clip and image has a short link (`/w/abc123`, `/i/abc123`) with OpenGraph tags, so Discord, Slack and friends show the video inline. |
+| **Public or link-only** | Each item is either listed in the library or reachable only by its link. Scanned folders start link-only, so nothing leaks by accident. |
+| **Transcoding that knows when to bother** | The default `compat` mode leaves normal MP4s alone and only re-encodes files browsers can't play (MKV, HEVC). Hardware encoders are detected automatically. |
+| **Bring your existing folders** | Point it at the folders where the app already saves recordings. Files are indexed in place, never copied or modified, and new captures show up on their own. |
+| **An admin area, not a config file** | Files with bulk actions, tags, transcoding, sharing, webhooks and upload tokens, all behind a single password with sessions and CSRF protection. |
+| **The small stuff** | RSS feed of public clips, Discord and generic webhooks when something goes public, view counts, a one-command import from the old Python server. |
 
 ## Quick start
 
-Both `UPLOAD_TOKEN` and an admin password are needed. Generate secrets with `openssl rand -base64 32`.
+You need two secrets: an **upload token** for the desktop app and an **admin password** for you. Make them with `openssl rand -base64 32`.
 
-### Binary
-
-Download the Linux archive for your architecture (x86_64 or aarch64) from the GitHub releases page (it contains the binary, `README.md`, `LICENSE` and `config.example.toml`), then:
-
-```sh
-UPLOAD_TOKEN=change-me ADMIN_PASSWORD=change-me-too ./fthr-clips-server serve
-```
-
-It listens on `127.0.0.1:8080` and stores data in `./data`. Install `ffmpeg` and `ffprobe` for thumbnails and transcoding (without them, uploads still work as link-only files).
-
-### Docker
+### Docker (recommended)
 
 ```sh
 docker run -d --name fthr-clips \
-  -e UPLOAD_TOKEN=change-me -e ADMIN_PASSWORD=change-me-too \
+  -e UPLOAD_TOKEN=paste-a-long-random-token \
+  -e ADMIN_PASSWORD=paste-another-one \
   -e PUBLIC_BASE_URL=https://clips.example.com \
-  -p 127.0.0.1:18080:8080 -v clips-data:/data \
-  ghcr.io/<owner>/fthr-clips-server:latest
+  -p 127.0.0.1:18080:8080 \
+  -v clips-data:/data \
+  ghcr.io/kalopsia-space/fthr-clips-server:latest
 ```
 
-The image runs as uid 10001, bundles `ffmpeg`, stores everything in `/data` and has a health check on `/healthz`. To build it yourself: `docker build -t fthr-clips-server .`
+The image bundles `ffmpeg`, runs as a non-root user, keeps everything under `/data` and has a health check. Put a reverse proxy with TLS in front of port 18080 and you're done. There's a [`docker-compose.yml`](docker-compose.yml) with sensible hardening if you prefer compose.
 
-### Docker Compose
+### Single binary
+
+Grab the Linux archive for your CPU (x86_64 or aarch64) from the [releases page](https://github.com/kalopsia-space/fthr-clips-server/releases), then:
 
 ```sh
-cp .env.example .env     # then set UPLOAD_TOKEN, ADMIN_PASSWORD and PUBLIC_BASE_URL
-docker compose up -d --build
+UPLOAD_TOKEN=paste-a-long-random-token \
+ADMIN_PASSWORD=paste-another-one \
+./fthr-clips-server serve
 ```
 
-The service is published on `127.0.0.1:18080`; put a reverse proxy in front (see below). Uncomment the `/videos` and `/images` mounts in `docker-compose.yml` and set `VIDEO_DIRS=/videos` / `IMAGE_DIRS=/images` in `.env` to use scan folders. `mem_limit` is 2g (1g is enough with `TRANSCODING=off`) and `pids_limit` is 256, because libx264 is multi-threaded and needs process headroom for transcoding on many-core hosts.
+It listens on `127.0.0.1:8080` and stores data in `./data`. Install `ffmpeg` for posters and transcoding.
 
-## Desktop app setup
+### Connect the desktop app
 
-In the FTHR desktop app choose the "Your server" provider and enter:
+In FTHR Clips, open the upload settings, choose **Your server**, and enter:
 
-- URL: `https://clips.example.com/upload`
-- Authorization: `Bearer <your UPLOAD_TOKEN>`
+| Field | Value |
+|---|---|
+| URL | `https://clips.example.com/upload` |
+| Authorization | `Bearer paste-a-long-random-token` |
 
-Additional upload tokens can be created in `/admin/tokens`.
+Hit **Test connection**, record something, hit share. The link in your clipboard is your new server. More detail in [Desktop app setup](docs/desktop-app.md).
 
-## Configuration
+## How it works
 
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `UPLOAD_TOKEN` | none (required unless `config.toml` exists) | Bearer token the desktop app uses to upload. |
-| `ADMIN_PASSWORD` | none | Plain admin password. Prefer the hash below. |
-| `ADMIN_PASSWORD_HASH` | none | Argon2id hash of the admin password (`fthr-clips-server hash-password`). |
-| `DATA_DIR` (alias `STORAGE_DIR`) | `data` (`/data` in Docker) | Database, uploads, thumbnails, renditions and `config.toml`. |
-| `VIDEO_DIRS` | none | Comma-separated folders to scan for videos. |
-| `IMAGE_DIRS` | none | Comma-separated folders to scan for images. |
-| `PUBLIC_BASE_URL` | none | Public URL used in links, feed and webhooks, for example `https://clips.example.com`. |
-| `MAX_UPLOAD_BYTES` | `524288000` | Maximum upload size in bytes. |
-| `BIND_HOST` | `127.0.0.1` (`0.0.0.0` in Docker) | Address to listen on. |
-| `PORT` | `8080` | Port to listen on. |
-| `TRUSTED_PROXIES` | none | Comma-separated IPs or CIDRs of reverse proxies whose `X-Forwarded-For` is trusted. |
-| `SCAN_INTERVAL_MINUTES` | `5` | How often scan folders are rescanned. |
-| `TRANSCODING` | `compat` | `off`, `compat` or `on`. See Transcoding. |
-| `ENCODER` | `auto` | `auto`, `x264`, `nvenc`, `vaapi`, `qsv` or `videotoolbox`. |
-| `TRANSCODE_WORKERS` | `1` | Number of concurrent transcodes. |
-| `TRANSCODE_TIMEOUT_MINUTES` | `60` | Per-job transcode timeout. |
-| `FFMPEG_PATH` | found on `PATH` | Path to the `ffmpeg` binary. |
-| `FFPROBE_PATH` | found on `PATH` | Path to the `ffprobe` binary. |
-| `DISCORD_WEBHOOK_URL` | none | Discord webhook notified when a clip is first made public. |
-| `WEBHOOK_URL` | none | Generic JSON webhook notified at the same moment. |
-| `SITE_TITLE` | `FTHR Clips` | Site name shown in the UI, feed and previews. |
-| `LOG_LEVEL` | `info` | Log filter (`error`, `warn`, `info`, `debug`, or an `EnvFilter` string). |
-
-Precedence: settings edited in the admin pages (stored in the database) override environment variables, which override `{DATA_DIR}/config.toml`, which overrides the built-in defaults. `config.toml` uses the lowercase variable names; see `config.example.toml`. The admin pages `/admin/library`, `/admin/transcoding`, `/admin/sharing` and `/admin/integrations` edit the settings that can be overridden (site title, public URL, scan interval, transcoding, encoder, workers, timeout, webhooks and more). Startup settings (`DATA_DIR`, `BIND_HOST`, `PORT`, scan folders, credentials, `TRUSTED_PROXIES`, `MAX_UPLOAD_BYTES`) come only from the environment or `config.toml`.
-
-## Transcoding
-
-- `off`: files are served as uploaded.
-- `compat`: only files browsers may not play (for example HEVC or unusual containers) get a compatible H.264 rendition.
-- `on`: every video gets a rendition.
-
-With `ENCODER=auto` the server picks the best working encoder found in `ffmpeg` (hardware encoders first, `x264` as the fallback). Run `fthr-clips-server check` to see what was detected. The Docker image has software `x264` only; for NVENC, VAAPI or QSV run the binary directly (or mount your own `ffmpeg` and set `FFMPEG_PATH`). On ARM (Raspberry Pi and similar) software encoding is slow: keep `TRANSCODING=off` or `compat` and `TRANSCODE_WORKERS=1`.
-
-## Scan folders
-
-Set `VIDEO_DIRS` and/or `IMAGE_DIRS` to index existing folders in place. Files are never copied or modified; scanned items default to link-only (not listed publicly) until you publish them in the admin area. Folders are watched for changes and rescanned every `SCAN_INTERVAL_MINUTES`. Run a one-off scan with `fthr-clips-server scan`. In Docker, mount the folders read-only (for example `/videos:ro`).
-
-## Reverse proxy
-
-Run the server behind a TLS-terminating proxy; the server itself speaks plain HTTP. Set `PUBLIC_BASE_URL` to the public HTTPS address so generated links and the feed are correct, and set `TRUSTED_PROXIES` to your proxy's address so the client IP (admin login throttling, view counting) comes from `X-Forwarded-For` and the scheme from `X-Forwarded-Proto`, rather than being the proxy's. Do not list addresses that are not your proxy.
-
-Caddy example:
-
-```
-clips.example.com {
-    request_body {
-        max_size 500MB
-    }
-    reverse_proxy 127.0.0.1:18080
-}
+```mermaid
+flowchart LR
+    App[FTHR Clips app] -- "POST /upload" --> S[(fthr-clips-server)]
+    Folders[Your recording folders] -- "watched & scanned" --> S
+    S --> Lib[Library & share pages]
+    S --> Jobs[ffmpeg jobs: posters, previews, transcodes]
+    Lib -- "og:video" --> Discord[Discord embeds]
+    S -- "webhook" --> Discord
 ```
 
-With the compose file above, the proxy runs on the host and `TRUSTED_PROXIES=172.16.0.0/12,127.0.0.1` covers the Docker bridge gateway.
+Everything lives in one data directory: a SQLite database, the uploaded files, and a `derived/` folder of posters, previews and renditions. Files are identified by content hash, so re-uploading the same clip gives you the same link, and a file you move on disk keeps its page, tags and view count. Processing runs in a small job queue that survives restarts and simply waits when `ffmpeg` isn't installed.
 
-## Migrating from the Python version
+## Documentation
 
-Point the new server at the old data directory (for example the same Docker volume) and run:
+| Guide | What's in it |
+|---|---|
+| [Deployment](docs/deployment.md) | Docker, Compose, reverse proxies, `PUBLIC_BASE_URL` and `TRUSTED_PROXIES`, running on ARM. |
+| [Configuration](docs/configuration.md) | Every setting, its default, and which ones the admin pages can change at runtime. |
+| [Library, scanning and transcoding](docs/media.md) | Scan folders, visibility rules, the three transcoding modes, encoder detection. |
+| [Desktop app setup](docs/desktop-app.md) | Connecting FTHR Clips, extra upload tokens, what the app expects from the server. |
+| [Migrating from the Python server](docs/migration.md) | The one-command import and how old links keep working. |
+| [Development](docs/development.md) | Building, testing, the CLI, and how releases are made. |
 
-```sh
-fthr-clips-server import-legacy
-```
+## Status
 
-For each old `<id>.json` sidecar the file is moved into `uploads/` under its original name, added to the library (the old "listed" flag becomes public), and queued for thumbnailing and transcoding. Old `/files/<id>` links redirect to the new pages. Files are moved, not copied, so disk use does not double. The import also runs automatically at startup whenever the data directory contains pending legacy `{id}.json` sidecar/file pairs, whether or not `library.db` already exists.
-
-## CLI subcommands
-
-| Command | What it does |
-| --- | --- |
-| `fthr-clips-server serve` | Run the web server (default when no subcommand is given). |
-| `fthr-clips-server scan` | Scan the configured folders once, print the report and exit. |
-| `fthr-clips-server import-legacy` | Import the old Python service's files from the data dir and exit. |
-| `fthr-clips-server hash-password` | Read a password from stdin and print its Argon2id hash for `ADMIN_PASSWORD_HASH`. |
-| `fthr-clips-server check` | Print diagnostics: data dir, database, ffmpeg, encoder, scan folders, bind address. |
-
-## Development
-
-```sh
-cargo fmt --check
-cargo clippy --all-targets --locked -- -D warnings
-cargo test --locked
-cargo run -- check
-```
-
-Tests in `tests/ffmpeg.rs` and `tests/transcode.rs`, and the media parts of `tests/jobs.rs`, need `ffmpeg` and `ffprobe`; without them they skip. CI runs on Linux with ffmpeg installed. Release builds for the musl targets need no system libraries because SQLite is bundled and TLS uses rustls (no OpenSSL). CI also builds the Docker image; pushing a `v*` tag builds release archives for the two Linux targets and publishes the multi-arch image to GHCR. The code keeps its platform gates, but macOS and Windows are not built or tested.
+This is an alpha. The server has a thorough test suite and has been reviewed end to end, but it is young: expect rough edges in the admin UI and please [open an issue](https://github.com/kalopsia-space/fthr-clips-server/issues) when you find one. Linux (x86_64 and aarch64) and Docker are the supported platforms.
 
 ## License
 
-GPL-3.0-only. See `LICENSE`.
+[GPL-3.0-only](LICENSE), the same license as FTHR Clips. Fonts are Oswald and Inter under the SIL Open Font License.
