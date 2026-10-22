@@ -3,6 +3,7 @@
 pub mod api_media;
 pub mod api_settings;
 pub mod api_tags;
+pub mod api_tokens;
 pub mod auth;
 pub mod pages;
 
@@ -26,6 +27,7 @@ pub fn routes() -> Router<AppState> {
         .route("/admin", get(pages::root))
         .route("/admin/files", get(pages::files))
         .route("/admin/tags", get(pages::tags))
+        .route("/admin/tokens", get(pages::tokens))
         .route(
             "/admin/library",
             get(pages::library_get).post(pages::library_post),
@@ -63,6 +65,14 @@ pub fn routes() -> Router<AppState> {
         .route(
             "/admin/api/tags",
             get(api_tags::list).post(api_tags::create),
+        )
+        .route(
+            "/admin/api/tokens",
+            get(api_tokens::list).post(api_tokens::create),
+        )
+        .route(
+            "/admin/api/tokens/{id}",
+            axum::routing::delete(api_tokens::revoke),
         )
         .route(
             "/admin/api/tags/{id}",
