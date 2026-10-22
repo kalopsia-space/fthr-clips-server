@@ -1,0 +1,9 @@
+{% extends "../base.html" %}
+{% block scripts %}<script src="/static/admin.js?v={{ asset_v }}" defer></script>{% endblock %}
+{% block content %}
+<nav class="adm-tabs" aria-label="Admin">
+  {% for tab in tabs %}<a class="adm-tab{% if tab.0 == active %} on{% endif %}" href="{{ tab.2 }}"{% if tab.0 == active %} aria-current="page"{% endif %}>{{ tab.1 }}</a>
+  {% endfor %}
+</nav>
+{% block admin_body %}{% endblock %}
+{% endblock %}

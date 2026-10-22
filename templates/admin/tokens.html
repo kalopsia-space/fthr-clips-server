@@ -1,0 +1,43 @@
+{% extends "admin/base.html" %}
+{% block admin_body %}
+<form class="tag-new" id="token-new">
+  <input type="text" id="token-new-name" maxlength="60" placeholder="Token name, e.g. laptop" aria-label="Token name" required>
+  <button class="btn primary" type="submit">Create token</button>
+</form>
+{% if tokens.is_empty() %}
+<p class="empty">No upload tokens yet.</p>
+{% else %}
+<table class="adm-table" id="tokens">
+  <thead><tr><th>Name</th><th>Token</th><th>Created</th><th>Last used</th><th>Status</th><th></th></tr></thead>
+  <tbody>
+  {% for t in tokens %}
+  <tr data-token-id="{{ t.id }}" data-name="{{ t.name }}">
+    <td>{{ t.name }}</td>
+    <td><code>{{ t.prefix }}...</code></td>
+    <td>{{ t.created }}</td>
+    <td>{{ t.last_used }}</td>
+    <td>{% if t.revoked %}Revoked{% else %}Active{% endif %}</td>
+    <td class="c-act">{% if !t.revoked %}<button type="button" class="btn ghost token-revoke">Revoke</button>{% endif %}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+<dialog id="token-created" class="dlg" aria-labelledby="token-created-title">
+  <h2 id="token-created-title">Token created</h2>
+  <p>Copy it now. It will not be shown again.</p>
+  <input type="text" id="token-value" readonly aria-label="New token">
+  <div class="dlg-actions">
+    <button class="btn ghost" type="button" id="token-copy">Copy</button>
+    <button class="btn primary" type="button" id="token-done">Done</button>
+  </div>
+</dialog>
+<dialog id="token-revoke-dialog" class="dlg" aria-labelledby="token-revoke-title">
+  <h2 id="token-revoke-title">Revoke token</h2>
+  <p id="token-revoke-text"></p>
+  <div class="dlg-actions">
+    <button class="btn ghost" type="button" id="token-revoke-cancel">Cancel</button>
+    <button class="btn danger" type="button" id="token-revoke-confirm">Revoke</button>
+  </div>
+</dialog>
+{% endblock %}

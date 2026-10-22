@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }}</title>
+<link rel="icon" type="image/png" href="/static/logo.png?v={{ asset_v }}">
+<link rel="alternate" type="application/rss+xml" title="{{ site_title }}" href="/feed.rss">
+<link rel="stylesheet" href="/static/app.css?v={{ asset_v }}">
+{% if let Some(token) = admin_csrf %}<meta name="csrf-token" content="{{ token }}">
+{% endif %}{% block head %}{% endblock %}
+<script src="/static/app.js?v={{ asset_v }}" defer></script>
+{% block scripts %}{% endblock %}
+</head>
+<body{% if let Some(token) = admin_csrf %} data-csrf="{{ token }}"{% endif %}>
+<header class="strip">
+  <a class="brand" href="/"><img src="/static/logo.png?v={{ asset_v }}" alt=""><span>{{ site_title }}</span></a>
+  <div class="spacer"></div>
+  <form class="search" action="{{ search_action }}" method="get" role="search">
+    <svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ asset_v }}#i-search"/></svg>
+    <input type="search" name="q" value="{{ q }}" placeholder="Search clips, tags" aria-label="Search">
+  </form>
+  {% if signed_in %}<form class="inline" method="post" action="/admin/logout">{% if let Some(token) = admin_csrf %}<input type="hidden" name="csrf" value="{{ token }}">{% endif %}<button class="tb-btn" type="submit">admin ▾ · Sign out</button></form>{% else %}<a class="tb-btn" href="/admin/login">Sign in</a>{% endif %}
+</header>
+{% include "partials/rail.html" %}
+<main class="main">
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

@@ -3,3 +3,10 @@ data/
 .venv/
 __pycache__/
 .pytest_cache/
+target/
+.superpowers/
+*.db
+*.db-wal
+*.db-shm
+dist/
+*.tar.gz

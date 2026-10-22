@@ -1,0 +1,8 @@
+<section class="sect">
+  <h2 class="hd">Share</h2>
+  <div class="bd">
+    <div class="link"><input type="text" readonly value="{{ share_url }}" aria-label="Share link"><button class="btn primary" type="button" data-copy="{{ share_url }}">Copy</button></div>
+    <a class="btn ghost" href="{{ download_url }}" download>Download original</a>
+    {% if !is_image %}<button class="btn ghost" type="button" data-copy-time="{{ share_url }}">Copy at current time (0:00)</button>{% endif %}
+  </div>
+</section>

@@ -1,0 +1,19 @@
+{% extends "admin/base.html" %}
+{% block admin_body %}
+{% if saved %}<p class="notice ok" role="status">Saved</p>{% endif %}
+{% if !error.is_empty() %}<p class="notice err" role="alert">{{ error }}</p>{% endif %}
+<form class="set-form" method="post" action="/admin/sharing">
+  <input type="hidden" name="csrf" value="{{ admin_csrf.as_deref().unwrap_or("") }}">
+  <label class="set-row"><span class="set-label">Site title</span><input type="text" name="site_title" maxlength="80" value="{{ s.site_title }}"></label>
+  <label class="set-row"><span class="set-label">Public base URL</span><input type="text" name="public_base_url" placeholder="https://clips.example.com" value="{{ s.public_base_url }}"></label>
+  <label class="set-row"><span class="set-label">Default sort</span><select name="default_sort">
+    <option value="newest"{% if s.default_sort == "newest" %} selected{% endif %}>Newest</option>
+    <option value="oldest"{% if s.default_sort == "oldest" %} selected{% endif %}>Oldest</option>
+    <option value="most_viewed"{% if s.default_sort == "most_viewed" %} selected{% endif %}>Most viewed</option>
+    <option value="title"{% if s.default_sort == "title" %} selected{% endif %}>Title</option>
+    <option value="longest"{% if s.default_sort == "longest" %} selected{% endif %}>Longest</option>
+  </select></label>
+  <label class="set-row check"><input type="checkbox" name="library_requires_login" value="1"{% if s.library_requires_login %} checked{% endif %}><span>Require admin sign-in to browse the library (share links stay public)</span></label>
+  <div class="set-actions"><button class="btn primary" type="submit">Save</button></div>
+</form>
+{% endblock %}

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block head %}<meta property="og:site_name" content="{{ site_title }}">
+<meta property="og:title" content="{{ media.title }}">
+<meta property="og:description" content="{{ og_description }}">
+<meta property="og:url" content="{{ page_url }}">
+<meta property="og:type" content="website">
+<meta property="og:image" content="{{ og_image }}">
+<meta property="og:image:type" content="{{ og_mime }}">
+{% if let Some(w) = media.width %}<meta property="og:image:width" content="{{ w }}">
+{% endif %}{% if let Some(h) = media.height %}<meta property="og:image:height" content="{{ h }}">
+{% endif %}<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{ media.title }}">
+<meta name="twitter:image" content="{{ og_image }}">
+{% endblock %}
+{% block scripts %}{% if signed_in %}<script src="/static/admin.js?v={{ asset_v }}" defer></script>{% endif %}{% endblock %}
+{% block content %}
+<div class="clip imageview">
+  <div class="player">
+    <div class="stage image"><img class="shot" src="{{ original_url }}" alt="{{ media.title }}" data-lightbox="{{ original_url }}"></div>
+    <div class="under">
+      <h1>{{ media.title }}</h1>
+      <div class="meta">{{ meta_line }}</div>
+      {% if !media.description.is_empty() %}<p class="desc">{{ media.description }}</p>{% endif %}
+      {% if !tags.is_empty() %}<div class="tags">{% for tag in tags %}<a class="tag" href="/images?tag={{ tag.name_enc }}" data-colour="{{ tag.colour }}">{{ tag.name }}</a>{% endfor %}</div>{% endif %}
+    </div>
+  </div>
+  <aside class="panel" data-id="{{ media.id }}" data-source="{% if is_scan %}scan{% else %}upload{% endif %}">
+    {% if signed_in %}{% include "partials/panel_visibility.html" %}{% endif %}
+    {% include "partials/panel_share.html" %}
+    {% include "partials/panel_details.html" %}
+    <section class="sect">
+      <h2 class="hd">File</h2>
+      <div class="bd">
+        <div class="kv"><b>Format</b><span>{{ format }}</span></div>
+        {% if !dimensions.is_empty() %}<div class="kv"><b>Dimensions</b><span>{{ dimensions }}</span></div>{% endif %}
+        <div class="kv"><b>Size</b><span>{{ size }}</span></div>
+        <div class="kv"><b>File</b><span>{{ file_name }}</span></div>
+      </div>
+    </section>
+    {% if signed_in %}{% include "partials/panel_delete.html" %}{% endif %}
+  </aside>
+</div>
+<div class="lightbox" hidden><img alt="{{ media.title }}"></div>
+{% if signed_in %}{% include "partials/delete_dialog.html" %}{% endif %}
+{% endblock %}
