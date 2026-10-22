@@ -30,6 +30,7 @@ async fn original_streams_with_range() {
         .unwrap();
     assert_eq!(r.status(), 206);
     assert_eq!(r.headers()["content-type"], "video/mp4");
+    assert!(!r.headers().contains_key("x-frame-options"));
     assert!(r.headers().contains_key("content-range"));
     assert_eq!(r.bytes().await.unwrap().len(), 10);
 }
@@ -46,6 +47,7 @@ async fn range_past_end_is_416() {
         .await
         .unwrap();
     assert_eq!(r.status(), 416);
+    assert!(!r.headers().contains_key("cache-control"));
 }
 
 #[tokio::test]

@@ -11,6 +11,7 @@ use tower_http::services::ServeFile;
 use crate::app::AppState;
 use crate::db::{jobs, media};
 use crate::media::paths::DerivedPaths;
+use crate::web::security::AllowFraming;
 
 const DERIVED_CACHE: &str = "public, max-age=3600";
 const PRIVATE_CACHE: &str = "private, max-age=0";
@@ -70,10 +71,12 @@ async fn serve(
             "thumb.jpg" => (derived.thumb(), "image/jpeg"),
             "preview.mp4" => (derived.preview(), "video/mp4"),
             _ => {
-                let h: u32 = file.strip_suffix("p.mp4")?.parse().ok()?;
-                if !matches!(h, 480 | 720 | 1080) {
-                    return None;
-                }
+                let h: u32 = match file {
+                    "480p.mp4" => 480,
+                    "720p.mp4" => 720,
+                    "1080p.mp4" => 1080,
+                    _ => return None,
+                };
                 let ready = jobs::renditions_for(&state.db, &m.id)
                     .await
                     .ok()?
@@ -114,9 +117,18 @@ async fn serve(
     if resp.status() == StatusCode::NOT_FOUND {
         return None;
     }
+    let ok = matches!(
+        resp.status(),
+        StatusCode::OK | StatusCode::PARTIAL_CONTENT | StatusCode::NOT_MODIFIED
+    );
     let mut resp = resp.map(Body::new);
+    if ok {
+        resp.extensions_mut().insert(AllowFraming);
+    }
     let h = resp.headers_mut();
-    h.insert(header::CACHE_CONTROL, HeaderValue::from_static(cache));
+    if ok {
+        h.insert(header::CACHE_CONTROL, HeaderValue::from_static(cache));
+    }
     if is_original {
         let name = Path::new(&m.path)
             .file_name()
