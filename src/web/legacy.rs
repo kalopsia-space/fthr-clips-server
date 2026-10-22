@@ -14,8 +14,9 @@ pub async fn redirect(State(state): State<AppState>, Path(old_id): Path<String>)
     }
     let found = async {
         match media::legacy_lookup(&state.db, &old_id).await? {
-            Some(id) => media::get(&state.db, &id).await,
-            None => Ok(None),
+            // An empty media_id marks an unimportable pair: no redirect.
+            Some(id) if !id.is_empty() => media::get(&state.db, &id).await,
+            _ => Ok(None),
         }
     }
     .await;

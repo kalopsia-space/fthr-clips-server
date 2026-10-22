@@ -131,7 +131,6 @@ pub async fn serve(config: Config) -> anyhow::Result<()> {
         Some(v) => tracing::info!("ffmpeg {v}"),
         None => tracing::warn!("ffmpeg not found: previews and transcoding are disabled"),
     }
-    crate::legacy::import_if_needed(&state).await;
     state.spawn_encoder_detection(state.settings.get().encoder);
     crate::jobs::spawn_pools(&state).await;
     crate::media::scan::spawn_background(&state);

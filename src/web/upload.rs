@@ -356,10 +356,24 @@ pub(crate) fn sanitise_name(original: &str, id: &str, ext: &str) -> String {
     let has_ext = name.len() > suffix.len() && name.to_ascii_lowercase().ends_with(&suffix);
     if !has_ext || stem.is_empty() || stem.chars().all(|c| c == '.') {
         format!("{id}.{ext}")
+    } else if name.len() > MAX_NAME_BYTES {
+        // Keep the whole name well under the 255-byte filesystem limit (room for `-N` suffixes).
+        let mut cut = MAX_NAME_BYTES.saturating_sub(suffix.len());
+        let base = &name[..name.len() - suffix.len()];
+        while !base.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        format!(
+            "{}{}",
+            base[..cut].trim_end(),
+            &name[name.len() - suffix.len()..]
+        )
     } else {
         name
     }
 }
+
+const MAX_NAME_BYTES: usize = 120;
 
 /// Atomically claims a free name in `dir` for the file at `temp`, suffixing
 /// `-2`, `-3`... on clash. The temp file is removed once the name is claimed.
@@ -411,5 +425,19 @@ pub(crate) async fn claim_path(dir: &Path, name: &str, temp: &Path) -> std::io::
             }
             Err(e) => return Err(e),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sanitise_name;
+
+    #[test]
+    fn long_names_are_capped() {
+        let long = format!("{}.mp4", "a".repeat(300));
+        let n = sanitise_name(&long, "idididid", "mp4");
+        assert!(n.len() <= 120, "{}", n.len());
+        assert!(n.ends_with(".mp4"));
+        assert!(n.starts_with("aaaa"));
     }
 }

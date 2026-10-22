@@ -407,6 +407,8 @@ async fn background_scan(state: &AppState) {
 pub fn spawn_background(state: &AppState) {
     let s = state.clone();
     tokio::spawn(async move {
+        // Legacy import first so the startup scan sees its files.
+        crate::legacy::import_if_needed(&s).await;
         background_scan(&s).await;
         loop {
             let minutes = s.settings.get().scan_interval_minutes;
