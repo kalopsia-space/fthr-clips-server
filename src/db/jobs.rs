@@ -135,17 +135,21 @@ pub async fn cancel(db: &Db, id: i64) -> Result<()> {
     set_state(db, id, "cancelled", None, &["queued", "running"]).await
 }
 
-/// Requeue a failed job.
-pub async fn retry(db: &Db, id: i64) -> Result<()> {
-    sqlx::query(
+/// Requeue a failed or cancelled job. Returns `Ok(true)` if it was requeued,
+/// `Ok(false)` if nothing changed (wrong state, or another queued/running job
+/// for the same `(media_id, kind)` already exists).
+pub async fn retry(db: &Db, id: i64) -> Result<bool> {
+    let result = sqlx::query(
         "UPDATE job SET state = 'queued', progress = 0, error = NULL, updated_at = ? \
-         WHERE id = ? AND state = 'failed'",
+         WHERE id = ? AND state IN ('failed', 'cancelled') \
+         AND NOT EXISTS (SELECT 1 FROM job j2 WHERE j2.media_id = job.media_id \
+           AND j2.kind = job.kind AND j2.state IN ('queued', 'running'))",
     )
     .bind(Utc::now())
     .bind(id)
     .execute(&db.0)
     .await?;
-    Ok(())
+    Ok(result.rows_affected() > 0)
 }
 
 pub async fn list_active(db: &Db) -> Result<Vec<Job>> {
@@ -185,6 +189,7 @@ pub async fn rendition_upsert(db: &Db, r: &Rendition) -> Result<()> {
     Ok(())
 }
 
+/// Renditions of a media item, tallest first (`height DESC`).
 pub async fn renditions_for(db: &Db, media_id: &str) -> Result<Vec<Rendition>> {
     Ok(
         sqlx::query_as("SELECT * FROM rendition WHERE media_id = ? ORDER BY height DESC")
