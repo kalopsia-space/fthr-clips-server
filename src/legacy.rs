@@ -24,7 +24,8 @@ pub struct ImportReport {
 
 #[derive(Deserialize)]
 struct Sidecar {
-    name: String,
+    #[serde(default)]
+    name: Option<String>,
     #[serde(default)]
     content_type: Option<String>,
     #[serde(default = "default_listed")]
@@ -34,6 +35,15 @@ struct Sidecar {
 fn default_listed() -> bool {
     true
 }
+
+/// `legacy_id.media_id` value for pairs that cannot be imported (unknown type,
+/// unusable sidecar). They count as handled so they are not retried or re-warned
+/// on every start; their files are left untouched and `/files/{old_id}` is 404.
+const UNIMPORTABLE: &str = "";
+
+/// Prefix of this module's temp links, so a crashed run's leftovers can be swept
+/// without touching uploads in flight (which use `.incoming-` + hex).
+const TEMP_PREFIX: &str = ".incoming-legacy-";
 
 /// Old ids are 20..=32 chars of `[A-Za-z0-9_-]`.
 pub fn valid_old_id(id: &str) -> bool {
@@ -91,11 +101,19 @@ pub async fn import_if_needed(state: &AppState) {
 
 pub async fn import(state: &AppState) -> anyhow::Result<ImportReport> {
     let mut report = ImportReport::default();
+    sweep_temps(state).await;
+    let mut pending = Vec::new();
     for id in find_pairs(&state.config.data_dir) {
-        if media::legacy_exists(&state.db, &id).await? {
-            continue;
+        if !media::legacy_exists(&state.db, &id).await? {
+            pending.push(id);
         }
-        match import_one(state, &id).await {
+    }
+    tracing::info!("legacy import: {} pairs pending", pending.len());
+    for (i, id) in pending.iter().enumerate() {
+        if i > 0 && i % 100 == 0 {
+            tracing::info!("legacy import: {i}/{} processed", pending.len());
+        }
+        match import_one(state, id).await {
             Ok(true) => report.imported += 1,
             Ok(false) => report.skipped += 1,
             Err(e) => {
@@ -112,21 +130,70 @@ pub async fn import(state: &AppState) -> anyhow::Result<ImportReport> {
     Ok(report)
 }
 
+fn upload_dir(state: &AppState) -> PathBuf {
+    state
+        .config
+        .data_dir
+        .join(safe_folder(&state.settings.get().upload_folder))
+}
+
+/// Removes temp links left by a crashed earlier run.
+async fn sweep_temps(state: &AppState) {
+    let Ok(mut rd) = tokio::fs::read_dir(upload_dir(state)).await else {
+        return;
+    };
+    while let Ok(Some(e)) = rd.next_entry().await {
+        if e.file_name().to_string_lossy().starts_with(TEMP_PREFIX) {
+            let _ = tokio::fs::remove_file(e.path()).await;
+        }
+    }
+}
+
+/// An earlier run that died between claiming a name and inserting the row leaves
+/// a row-less copy in the upload folder; find it by size, then content id.
+async fn find_orphan(dir: &Path, size: u64, id: &str) -> Option<PathBuf> {
+    let mut rd = tokio::fs::read_dir(dir).await.ok()?;
+    while let Ok(Some(e)) = rd.next_entry().await {
+        let Ok(meta) = tokio::fs::symlink_metadata(e.path()).await else {
+            continue;
+        };
+        if !meta.file_type().is_file()
+            || meta.len() != size
+            || e.file_name().to_string_lossy().starts_with(".incoming-")
+        {
+            continue;
+        }
+        let p = e.path();
+        let q = p.clone();
+        if let Ok(Ok(found)) = tokio::task::spawn_blocking(move || media_id(&q)).await {
+            if found == id {
+                return Some(p);
+            }
+        }
+    }
+    None
+}
+
+/// Extension from the sidecar name, else from the content type.
 fn extension_for(sc: &Sidecar) -> Option<String> {
-    let from_name = Path::new(&basename(&sc.name))
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.to_ascii_lowercase());
+    let from_name = sc.name.as_deref().and_then(|n| {
+        Path::new(&basename(n))
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_ascii_lowercase())
+    });
     if from_name.is_some() {
         return from_name;
     }
     let mime: mime_guess::mime::Mime = sc.content_type.as_deref()?.parse().ok()?;
     let exts = mime_guess::get_mime_extensions_str(mime.essence_str())?;
-    exts.iter()
-        .find(|e| {
-            crate::media::kind::VIDEO_EXTS.contains(e) || crate::media::kind::IMAGE_EXTS.contains(e)
-        })
-        .map(|e| e.to_string())
+    exts.first().map(|e| e.to_string())
+}
+
+async fn mark_unimportable(state: &AppState, old_id: &str, why: &str) -> anyhow::Result<bool> {
+    tracing::warn!("legacy {old_id}: {why}, leaving files");
+    media::insert_legacy(&state.db, old_id, UNIMPORTABLE).await?;
+    Ok(false)
 }
 
 /// Ok(true) = imported, Ok(false) = skipped.
@@ -135,10 +202,16 @@ async fn import_one(state: &AppState, old_id: &str) -> anyhow::Result<bool> {
     let raw = data_dir.join(old_id);
     let sidecar_path = data_dir.join(format!("{old_id}.json"));
 
-    let sc: Sidecar = serde_json::from_slice(&tokio::fs::read(&sidecar_path).await?)?;
+    let sc: Sidecar = match serde_json::from_slice(&tokio::fs::read(&sidecar_path).await?) {
+        Ok(sc) => sc,
+        Err(e) => return mark_unimportable(state, old_id, &format!("bad sidecar ({e})")).await,
+    };
     let Some(ext) = extension_for(&sc) else {
-        tracing::warn!("legacy {old_id}: no usable extension, leaving files");
-        return Ok(false);
+        return mark_unimportable(state, old_id, "no usable name or content type").await;
+    };
+    let name_src = match &sc.name {
+        Some(n) => n.clone(),
+        None => format!("{old_id}.{ext}"),
     };
     let head = {
         use tokio::io::AsyncReadExt;
@@ -156,8 +229,7 @@ async fn import_one(state: &AppState, old_id: &str) -> anyhow::Result<bool> {
         buf
     };
     let Some(kind) = kind_for(&ext, &head) else {
-        tracing::warn!("legacy {old_id}: unsupported type .{ext}, leaving files");
-        return Ok(false);
+        return mark_unimportable(state, old_id, &format!("unsupported type .{ext}")).await;
     };
     let meta = tokio::fs::symlink_metadata(&raw).await?;
     let created_at: Option<DateTime<Utc>> = meta.modified().ok().map(DateTime::<Utc>::from);
@@ -184,22 +256,27 @@ async fn import_one(state: &AppState, old_id: &str) -> anyhow::Result<bool> {
     }
     let slug = slug.ok_or_else(|| anyhow::anyhow!("no free slug for {id}"))?;
 
-    let dir = data_dir.join(safe_folder(&state.settings.get().upload_folder));
+    let dir = upload_dir(state);
     tokio::fs::create_dir_all(&dir).await?;
     let dir = tokio::fs::canonicalize(&dir).await?;
-    // Link the raw file to a temp name so the original stays until the row exists.
-    let mut tmp = [0u8; 8];
-    rand::rng().fill_bytes(&mut tmp);
-    let temp: PathBuf = dir.join(format!(".incoming-{}", hex::encode(tmp)));
-    if tokio::fs::hard_link(&raw, &temp).await.is_err() {
-        tokio::fs::copy(&raw, &temp).await?;
-    }
-    let name = sanitise_name(&sc.name, &id, &ext);
-    let final_path = match claim_path(&dir, &name, &temp).await {
-        Ok(p) => p,
-        Err(e) => {
-            let _ = tokio::fs::remove_file(&temp).await;
-            return Err(e.into());
+    let (final_path, adopted) = match find_orphan(&dir, meta.len(), &id).await {
+        Some(p) => (p, true),
+        None => {
+            // Link the raw file to a temp name so the original stays until the row exists.
+            let mut tmp = [0u8; 8];
+            rand::rng().fill_bytes(&mut tmp);
+            let temp: PathBuf = dir.join(format!("{TEMP_PREFIX}{}", hex::encode(tmp)));
+            if tokio::fs::hard_link(&raw, &temp).await.is_err() {
+                tokio::fs::copy(&raw, &temp).await?;
+            }
+            let name = sanitise_name(&name_src, &id, &ext);
+            match claim_path(&dir, &name, &temp).await {
+                Ok(p) => (p, false),
+                Err(e) => {
+                    let _ = tokio::fs::remove_file(&temp).await;
+                    return Err(e.into());
+                }
+            }
         }
     };
     let final_name = final_path
@@ -224,7 +301,9 @@ async fn import_one(state: &AppState, old_id: &str) -> anyhow::Result<bool> {
         created_at,
     };
     if let Err(e) = media::insert(&state.db, &new).await {
-        let _ = tokio::fs::remove_file(&final_path).await;
+        if !adopted {
+            let _ = tokio::fs::remove_file(&final_path).await;
+        }
         return Err(e);
     }
     // A failure here leaves the old pair in place; the next run takes the duplicate path.
