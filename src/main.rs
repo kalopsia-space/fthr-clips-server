@@ -16,6 +16,8 @@ enum Cmd {
     HashPassword,
     /// Print environment diagnostics (data dir, database, ffmpeg, encoder, scan dirs)
     Check,
+    /// Scan the configured folders once, print the report and exit
+    Scan,
 }
 
 #[tokio::main]
@@ -31,6 +33,7 @@ async fn main() -> anyhow::Result<()> {
     match cli.cmd.unwrap_or(Cmd::Serve) {
         Cmd::Serve => app::serve(config).await,
         Cmd::Check => check(config).await,
+        Cmd::Scan => scan(config).await,
         Cmd::HashPassword => unreachable!("handled above"),
     }
 }
@@ -79,5 +82,17 @@ async fn check(config: Config) -> anyhow::Result<()> {
         println!("scan dir: {} ({state})", d.display());
     }
     println!("bind: {}:{}", config.bind_host, config.port);
+    Ok(())
+}
+
+async fn scan(config: Config) -> anyhow::Result<()> {
+    use fthr_clips_server::{app::AppState, db::Db, media::scan::Scanner, settings::SettingsStore};
+    use std::sync::Arc;
+    std::fs::create_dir_all(&config.data_dir)?;
+    let db = Db::open(&config.data_dir.join("library.db")).await?;
+    let settings = Arc::new(SettingsStore::load(&db, &config).await?);
+    let state = AppState::new(config, db, settings);
+    let report = Scanner::new(state).run_once().await?;
+    println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())
 }

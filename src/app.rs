@@ -30,6 +30,8 @@ pub struct AppState {
     pub running: Arc<Mutex<HashMap<i64, CancellationToken>>>,
     /// Written by the library scanner; `None` until the first scan.
     pub last_scan: Arc<tokio::sync::RwLock<Option<ScanSummary>>>,
+    /// Single-flight control for the library scanner.
+    pub scan: Arc<crate::media::scan::ScanControl>,
 }
 
 impl AppState {
@@ -46,6 +48,7 @@ impl AppState {
             events: new_event_bus(),
             running: Arc::new(Mutex::new(HashMap::new())),
             last_scan: Arc::new(tokio::sync::RwLock::new(None)),
+            scan: Arc::new(crate::media::scan::ScanControl::default()),
         }
     }
 }
@@ -100,6 +103,7 @@ pub async fn serve(config: Config) -> anyhow::Result<()> {
         });
     }
     crate::jobs::spawn_pools(&state).await;
+    crate::media::scan::spawn_background(&state);
     axum::serve(
         listener,
         build_router(state).into_make_service_with_connect_info::<SocketAddr>(),

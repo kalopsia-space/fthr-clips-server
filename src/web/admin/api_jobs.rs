@@ -168,3 +168,14 @@ pub async fn events(
     });
     Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
 }
+
+/// `POST /admin/api/scan`: run a library scan now (or join the one in flight).
+pub async fn scan(
+    AdminSession(session): AdminSession,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<crate::media::scan::ScanReport>, ApiError> {
+    require_csrf(&session, &headers, None)?;
+    let report = crate::media::scan::request_scan(&state).await?;
+    Ok(Json(report))
+}
