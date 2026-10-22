@@ -1,0 +1,17 @@
+<section class="sect" data-quality-panel>
+  <h2 class="hd">Quality</h2>
+  <div class="bd">
+    {% for q in quality %}
+    <div class="kv" data-rung="{{ q.height }}">
+      <b>{{ q.height }}p</b>
+      <span>
+        {% if q.state == "ready" %}Ready{% else if q.state == "running" %}Encoding {{ q.pct }}%<progress max="100" value="{{ q.pct }}"></progress>{% else if q.state == "queued" %}Queued{% else if q.state == "failed" %}Failed{% if !q.error.is_empty() %} <small title="{{ q.error }}">(details)</small>{% endif %}{% else %}Not created{% endif %}
+        {% if signed_in %}
+          {% if q.state == "none" || q.state == "failed" %}<button class="btn ghost" type="button" data-transcode="{{ q.height }}">Queue</button>{% else %}<button class="btn ghost" type="button" data-remove-rendition="{{ q.height }}">Remove</button>{% endif %}
+        {% endif %}
+      </span>
+    </div>
+    {% endfor %}
+    {% if signed_in %}<button class="btn primary" type="button" data-transcode-all>Transcode all (ladder)</button>{% endif %}
+  </div>
+</section>

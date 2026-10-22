@@ -49,6 +49,7 @@
     {% include "partials/panel_share.html" %}
     {% include "partials/panel_details.html" %}
     {% include "partials/panel_file.html" %}
+    {% if !quality.is_empty() %}{% include "partials/panel_quality.html" %}{% endif %}
     {% if signed_in %}{% include "partials/panel_delete.html" %}{% endif %}
   </aside>
 </div>

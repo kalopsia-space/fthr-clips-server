@@ -303,3 +303,43 @@ pub async fn requeue(db: &Db, id: i64, error: &str) -> Result<()> {
     .await?;
     Ok(())
 }
+
+/// Update progress of an existing rendition row (never creates one).
+pub async fn rendition_progress(db: &Db, media_id: &str, height: i64, progress: f64) -> Result<()> {
+    sqlx::query(
+        "UPDATE rendition SET progress = ? WHERE media_id = ? AND height = ? AND state = 'running'",
+    )
+    .bind(progress)
+    .bind(media_id)
+    .bind(height)
+    .execute(&db.0)
+    .await?;
+    Ok(())
+}
+
+/// Mark an existing rendition failed (never creates one).
+pub async fn rendition_fail(db: &Db, media_id: &str, height: i64, error: &str) -> Result<()> {
+    sqlx::query(
+        "UPDATE rendition SET state = 'failed', error = ? WHERE media_id = ? AND height = ?",
+    )
+    .bind(error)
+    .bind(media_id)
+    .bind(height)
+    .execute(&db.0)
+    .await?;
+    Ok(())
+}
+
+/// Cancel every queued or running job of `kind` for a media item; returns their ids.
+pub async fn cancel_active_kind(db: &Db, media_id: &str, kind: &str) -> Result<Vec<i64>> {
+    let ids: Vec<i64> = sqlx::query_scalar(
+        "UPDATE job SET state = 'cancelled', updated_at = ? WHERE media_id = ? AND kind = ? \
+         AND state IN ('queued', 'running') RETURNING id",
+    )
+    .bind(Utc::now())
+    .bind(media_id)
+    .bind(kind)
+    .fetch_all(&db.0)
+    .await?;
+    Ok(ids)
+}
