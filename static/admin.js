@@ -152,70 +152,114 @@
     refresh();
   }
 
-  // Stats row: filled when /admin/api/stats exists.
-  function fillStat(id, val) {
+  // Stats row: GET /admin/api/stats.
+  function setStat(id, main, detail) {
     var v = $("#" + id + " .v");
-    if (!v || val === undefined || val === null) { return; }
-    var main = typeof val === "object" ? val.value : val;
-    if (main === undefined || main === null) { return; }
-    v.textContent = String(main);
-    if (typeof val === "object" && val.detail) {
+    if (!v) { return; }
+    v.textContent = main;
+    if (detail) {
       var small = document.createElement("small");
-      small.textContent = String(val.detail);
+      small.textContent = detail;
       v.appendChild(small);
     }
   }
-  if ($("#stat-media")) {
+  function gb(n) { return Math.round(n / 1e9) + " GB"; }
+  function ago(iso) {
+    var sec = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+    if (sec < 60) { return "just now"; }
+    if (sec < 3600) { return Math.floor(sec / 60) + " min ago"; }
+    if (sec < 86400) { return Math.floor(sec / 3600) + " h ago"; }
+    return Math.floor(sec / 86400) + " d ago";
+  }
+  function loadStats() {
     fetch("/admin/api/stats", { credentials: "same-origin" }).then(function (r) {
       return r.ok ? r.json() : null;
     }).then(function (s) {
       if (!s) { return; }
-      fillStat("stat-disk", s.disk);
-      fillStat("stat-scan", s.scan);
-      fillStat("stat-encoder", s.encoder);
+      if (s.disk && s.disk.total > 0) {
+        setStat("stat-disk", Math.round(s.disk.used / s.disk.total * 100) + "%",
+          gb(s.disk.used) + " of " + gb(s.disk.total));
+      }
+      if (s.last_scan) {
+        setStat("stat-scan", ago(s.last_scan.at), "+" + s.last_scan.found + " new");
+      } else {
+        setStat("stat-scan", "\u2014", "never");
+      }
+      if (!s.ffmpeg || !s.ffmpeg.available) {
+        setStat("stat-encoder", "\u2014", "ffmpeg not found");
+      } else if (s.encoder) {
+        setStat("stat-encoder", s.encoder, s.encoder === "libx264" ? "cpu" : "gpu");
+      }
     }, function () {});
   }
+  if ($("#stat-media")) { loadStats(); }
 
-  // Processing queue: polled while /admin/api/jobs exists.
+  // Processing queue: GET /admin/api/jobs, refreshed by SSE events and a 5 s poll.
   var queue = $("#queue");
   if (queue) {
     var qrows = $("#queue-rows");
     var qempty = $("#queue-empty");
-    var timer = null;
-    var render = function (jobs) {
-      while (qrows.firstChild) { qrows.removeChild(qrows.firstChild); }
-      qempty.hidden = jobs.length > 0;
-      jobs.forEach(function (j) {
-        var row = document.createElement("div");
-        row.className = "row";
-        var name = document.createElement("span");
-        name.className = "n";
-        name.textContent = (j.title ? j.title + " · " : "") + (j.kind || "job");
-        var track = document.createElement("div");
-        track.className = "track";
-        var bar = document.createElement("i");
-        var p = Number(j.progress);
-        bar.style.width = (isFinite(p) ? Math.max(0, Math.min(100, p <= 1 ? p * 100 : p)) : 0) + "%";
-        track.appendChild(bar);
-        var state = document.createElement("span");
-        state.textContent = j.state || "";
-        row.appendChild(name);
-        row.appendChild(track);
-        row.appendChild(state);
-        qrows.appendChild(row);
+    var pollTimer = null;
+    var jobBtn = function (label, id, action) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "btn ghost";
+      b.textContent = label;
+      b.addEventListener("click", function () {
+        b.disabled = true;
+        api("POST", "/admin/api/jobs/" + id + "/" + action).then(poll, function (e) { fail(e); poll(); });
       });
+      return b;
+    };
+    var jobRow = function (j, old) {
+      var row = document.createElement("div");
+      row.className = "row" + (old ? " old" : "");
+      var name = document.createElement("span");
+      name.className = "n";
+      name.textContent = (j.media_title ? j.media_title + " \u00b7 " : "") + j.kind;
+      if (j.error) { name.title = j.error; }
+      var track = document.createElement("div");
+      track.className = "track";
+      var bar = document.createElement("i");
+      var p = Number(j.progress);
+      bar.style.width = (isFinite(p) ? Math.max(0, Math.min(1, p)) * 100 : 0) + "%";
+      track.appendChild(bar);
+      var state = document.createElement("span");
+      state.textContent = j.state;
+      row.appendChild(name);
+      row.appendChild(track);
+      row.appendChild(state);
+      if (j.state === "queued" || j.state === "running") {
+        row.appendChild(jobBtn("Cancel", j.id, "cancel"));
+      } else if (j.state === "failed" || j.state === "cancelled") {
+        row.appendChild(jobBtn("Retry", j.id, "retry"));
+      }
+      return row;
+    };
+    var render = function (data) {
+      while (qrows.firstChild) { qrows.removeChild(qrows.firstChild); }
+      var active = data.active || [];
+      var recent = data.recent || [];
+      qempty.hidden = active.length + recent.length > 0;
+      active.forEach(function (j) { qrows.appendChild(jobRow(j, false)); });
+      recent.forEach(function (j) { qrows.appendChild(jobRow(j, true)); });
     };
     var poll = function () {
       fetch("/admin/api/jobs", { credentials: "same-origin" }).then(function (r) {
-        if (r.status === 404) { clearInterval(timer); return null; }
         return r.ok ? r.json() : null;
-      }).then(function (data) {
-        if (!data) { return; }
-        render(Array.isArray(data) ? data : (data.jobs || data.items || []));
-      }, function () {});
+      }).then(function (data) { if (data) { render(data); } }, function () {});
     };
-    timer = setInterval(poll, 5000);
+    var soon = function () {
+      if (pollTimer) { return; }
+      pollTimer = setTimeout(function () { pollTimer = null; poll(); }, 300);
+    };
+    setInterval(poll, 5000);
     poll();
+    if (window.EventSource) {
+      var es = new EventSource("/admin/api/events");
+      es.addEventListener("job", soon);
+      es.addEventListener("scan", function () { loadStats(); soon(); });
+    }
   }
 
   // ---- Tags page ----
