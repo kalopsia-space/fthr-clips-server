@@ -1,2 +1,0 @@
-#token-value { width: 100%; box-sizing: border-box; margin-bottom: 12px; padding: 8px; font-family: monospace; background: var(--s1, #111); color: var(--text); border: 1px solid var(--border); border-radius: var(--r8); }
-.dlg:has(#token-value) { max-width: 460px; }
