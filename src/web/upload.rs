@@ -264,8 +264,7 @@ pub async fn store_upload(state: &AppState, mut field: Field<'_>) -> Result<Medi
     let slug = slug.ok_or_else(|| UploadError::Db(anyhow::anyhow!("no free slug for {id}")))?;
 
     let name = sanitise_name(&original, &id, &ext);
-    let final_path = unique_path(&dir, &name).await;
-    tokio::fs::rename(&temp, &final_path).await?;
+    let final_path = claim_path(&dir, &name, &temp).await?;
     guard.disarm();
     if stale.is_some() {
         // Known content whose file went missing: point the row at the new copy.
@@ -350,18 +349,18 @@ fn sanitise_name(original: &str, id: &str, ext: &str) -> String {
         .file_stem()
         .map(|s| s.to_string_lossy().trim().to_string())
         .unwrap_or_default();
-    if stem.is_empty() || stem.chars().all(|c| c == '.') {
+    let suffix = format!(".{ext}");
+    let has_ext = name.len() > suffix.len() && name.to_ascii_lowercase().ends_with(&suffix);
+    if !has_ext || stem.is_empty() || stem.chars().all(|c| c == '.') {
         format!("{id}.{ext}")
     } else {
         name
     }
 }
 
-async fn unique_path(dir: &Path, name: &str) -> PathBuf {
-    let first = dir.join(name);
-    if !tokio::fs::try_exists(&first).await.unwrap_or(false) {
-        return first;
-    }
+/// Atomically claims a free name in `dir` for the file at `temp`, suffixing
+/// `-2`, `-3`... on clash. The temp file is removed once the name is claimed.
+async fn claim_path(dir: &Path, name: &str, temp: &Path) -> std::io::Result<PathBuf> {
     let p = Path::new(name);
     let stem = p
         .file_stem()
@@ -371,12 +370,43 @@ async fn unique_path(dir: &Path, name: &str) -> PathBuf {
         .extension()
         .map(|e| format!(".{}", e.to_string_lossy()))
         .unwrap_or_default();
-    let mut n = 2;
+    let mut n = 1;
     loop {
-        let cand = dir.join(format!("{stem}-{n}{ext}"));
-        if !tokio::fs::try_exists(&cand).await.unwrap_or(false) {
-            return cand;
-        }
+        let cand = if n == 1 {
+            dir.join(name)
+        } else {
+            dir.join(format!("{stem}-{n}{ext}"))
+        };
         n += 1;
+        match tokio::fs::hard_link(temp, &cand).await {
+            Ok(()) => {
+                let _ = tokio::fs::remove_file(temp).await;
+                return Ok(cand);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e)
+                if e.kind() == std::io::ErrorKind::Unsupported || e.raw_os_error() == Some(18) =>
+            {
+                // No hard links here (cross-device or unsupported): copy into an exclusively created file.
+                let created = tokio::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&cand)
+                    .await;
+                match created {
+                    Ok(_) => {
+                        if let Err(e) = tokio::fs::copy(temp, &cand).await {
+                            let _ = tokio::fs::remove_file(&cand).await;
+                            return Err(e);
+                        }
+                        let _ = tokio::fs::remove_file(temp).await;
+                        return Ok(cand);
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                    Err(e) => return Err(e),
+                }
+            }
+            Err(e) => return Err(e),
+        }
     }
 }
