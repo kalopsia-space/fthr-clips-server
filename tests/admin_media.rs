@@ -486,3 +486,30 @@ async fn bulk_caps_and_dedups_ids() {
     assert_eq!(j["ok"], 1);
     assert_eq!(j["failed"], json!([]));
 }
+
+#[tokio::test]
+async fn tag_names_may_not_contain_commas() {
+    let s = server().await;
+    let (id, _) = upload(&s, 9).await;
+    let (c, csrf) = login(&s, PW).await;
+    let r = c
+        .post(s.url("/admin/api/tags"))
+        .header(H, &csrf)
+        .json(&json!({"name": "a,b"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 400);
+    assert_eq!(
+        r.json::<Value>().await.unwrap()["error"],
+        "tag names may not contain commas"
+    );
+    let r = c
+        .patch(s.url(&format!("/admin/api/media/{id}")))
+        .header(H, &csrf)
+        .json(&json!({"tags": ["a,b"]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 400);
+}
