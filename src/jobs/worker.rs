@@ -133,6 +133,14 @@ async fn settle(state: &AppState, job: &Job, result: anyhow::Result<()>) -> anyh
                 ) {
                     media::set_processing(&state.db, &job.media_id, "failed", Some(&msg)).await?;
                 }
+                if let Some(h) = job
+                    .kind
+                    .strip_prefix("transcode:")
+                    .and_then(|h| h.parse::<i64>().ok())
+                {
+                    let why = format!("gave up: {msg}");
+                    jobs::rendition_fail(&state.db, &job.media_id, h, &why).await?;
+                }
                 emit(state, job, "failed", 0.0, Some(msg));
             }
         }

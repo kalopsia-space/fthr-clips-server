@@ -254,3 +254,117 @@ async fn manual_transcode_and_remove() {
     let item = admin_item(&s, &c, &id).await;
     assert_eq!(item["renditions"].as_array().unwrap().len(), 0);
 }
+
+async fn post_transcode(
+    s: &TestServer,
+    c: &reqwest::Client,
+    csrf: &str,
+    id: &str,
+    h: u32,
+) -> Value {
+    c.post(s.url(&format!("/admin/api/media/{id}/transcode")))
+        .header(H, csrf)
+        .json(&json!({"heights": [h]}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn unavailable_encoder_fails_rendition_without_retries() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let Some(fx) = mp4_480(tmp.path()) else {
+        eprintln!("skipped: ffmpeg not found");
+        return;
+    };
+    // A hardware encoder that is certain not to work here: detection ends Unavailable.
+    let s = server(&[("TRANSCODING", "off"), ("ENCODER", "videotoolbox")]).await;
+    let (c, csrf) = login(&s, PW).await;
+    let id = upload_id(&s, "ok.mp4", std::fs::read(fx).unwrap()).await;
+    assert!(
+        wait_for(30, || async {
+            media::get(s.db(), &id)
+                .await
+                .unwrap()
+                .unwrap()
+                .duration_ms
+                .is_some()
+        })
+        .await
+    );
+    post_transcode(&s, &c, &csrf, &id, 480).await;
+    assert!(
+        wait_for(30, || async {
+            admin_item(&s, &c, &id).await["renditions"][0]["state"] == "failed"
+        })
+        .await,
+        "rendition never failed"
+    );
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    let item = admin_item(&s, &c, &id).await;
+    assert_eq!(item["renditions"][0]["state"], "failed");
+    let job = item["jobs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|j| j["kind"] == "transcode:480")
+        .unwrap()
+        .clone();
+    assert_eq!(job["state"], "done", "job must complete, not retry or fail");
+}
+
+#[tokio::test]
+async fn admin_cancel_marks_rendition_failed_and_removes_tmp() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let Some(fx) = mp4_480(tmp.path()) else {
+        eprintln!("skipped: ffmpeg not found");
+        return;
+    };
+    let s = server(&[("TRANSCODING", "off")]).await;
+    let (c, csrf) = login(&s, PW).await;
+    let id = upload_id(&s, "ok.mp4", std::fs::read(fx).unwrap()).await;
+    assert!(
+        wait_for(30, || async {
+            media::get(s.db(), &id)
+                .await
+                .unwrap()
+                .unwrap()
+                .duration_ms
+                .is_some()
+        })
+        .await
+    );
+    let item = post_transcode(&s, &c, &csrf, &id, 480).await;
+    let job_id = item["jobs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|j| j["kind"] == "transcode:480")
+        .unwrap()["id"]
+        .as_i64()
+        .unwrap();
+    let r: Value = c
+        .post(s.url(&format!("/admin/api/jobs/{job_id}/cancel")))
+        .header(H, &csrf)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(r["cancelled"], true);
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    let item = admin_item(&s, &c, &id).await;
+    assert_eq!(item["renditions"][0]["state"], "failed");
+    assert_eq!(item["renditions"][0]["error"], "cancelled");
+    let tmp_file = s
+        .data_dir
+        .path()
+        .join("derived")
+        .join(&id)
+        .join("480p.tmp.mp4");
+    assert!(!tmp_file.exists());
+}

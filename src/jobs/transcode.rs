@@ -78,13 +78,23 @@ pub async fn queue_rendition(state: &AppState, media_id: &str, height: u32) -> a
     Ok(())
 }
 
-async fn encoder(state: &AppState) -> anyhow::Result<encoders::Encoder> {
+/// `Ok(None)`: detection finished and nothing works.
+async fn encoder(
+    state: &AppState,
+    cancel: &CancellationToken,
+) -> anyhow::Result<Option<encoders::Encoder>> {
     // Detection runs at startup; wait a while before burning a retry attempt.
     for _ in 0..120 {
-        match *state.encoder.read().await {
-            EncoderState::Detected(e) => return Ok(e),
-            EncoderState::Unavailable => bail!("no working encoder"),
-            EncoderState::Pending => tokio::time::sleep(Duration::from_millis(500)).await,
+        let st = *state.encoder.read().await;
+        match st {
+            EncoderState::Detected(e) => return Ok(Some(e)),
+            EncoderState::Unavailable => return Ok(None),
+            EncoderState::Pending => {
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_millis(500)) => {}
+                    _ = cancel.cancelled() => bail!("cancelled"),
+                }
+            }
         }
     }
     bail!("encoder not detected yet")
@@ -111,6 +121,15 @@ pub async fn transcode(
     let dest = derived.rendition(h);
     let hi = i64::from(h);
 
+    // A pending-detection timeout leaves the rendition queued; the worker marks
+    // it failed if the job gives up.
+    let Some(enc) = encoder(state, &cancel).await? else {
+        let msg = "no working encoder";
+        jobs::rendition_fail(&state.db, &m.id, hi, msg).await?;
+        worker::emit(state, job, "failed", 0.0, Some(msg.into()));
+        return Ok(());
+    };
+
     jobs::rendition_upsert(
         &state.db,
         &Rendition {
@@ -125,7 +144,7 @@ pub async fn transcode(
     )
     .await?;
 
-    let result = encode(state, job, &m, h, &tmp, cancel.clone()).await;
+    let result = encode(state, job, &m, h, &tmp, enc, cancel.clone()).await;
     match result {
         Ok(()) => {
             tokio::fs::rename(&tmp, &dest).await?;
@@ -140,13 +159,13 @@ pub async fn transcode(
         }
         Err(e) => {
             let _ = tokio::fs::remove_file(&tmp).await;
-            let pending = matches!(*state.encoder.read().await, EncoderState::Pending);
-            if !cancel.is_cancelled() && !pending {
-                let msg = format!("{e:#}");
-                let tail: String = msg.chars().take(500).collect();
-                if let Err(db) = jobs::rendition_fail(&state.db, &m.id, hi, &tail).await {
-                    tracing::warn!("recording rendition failure: {db:#}");
-                }
+            let msg = if cancel.is_cancelled() {
+                "cancelled".to_string()
+            } else {
+                format!("{e:#}").chars().take(500).collect()
+            };
+            if let Err(db) = jobs::rendition_fail(&state.db, &m.id, hi, &msg).await {
+                tracing::warn!("recording rendition failure: {db:#}");
             }
             Err(e)
         }
@@ -159,9 +178,9 @@ async fn encode(
     m: &media::Media,
     h: u32,
     tmp: &Path,
+    enc: encoders::Encoder,
     cancel: CancellationToken,
 ) -> anyhow::Result<()> {
-    let enc = encoder(state).await?;
     // Never upscale: the rung keeps its name but is scaled to the source height.
     let target = match m.height {
         Some(sh) if sh > 0 && (sh as u32) < h => ((sh as u32) & !1).max(2),
