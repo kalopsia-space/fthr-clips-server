@@ -55,5 +55,6 @@ pub async fn thumb(state: &AppState, job: &Job) -> anyhow::Result<()> {
     media::set_dimensions(&state.db, &m.id, i64::from(w), i64::from(h)).await?;
     media::set_flags(&state.db, &m.id, None, None, Some(true)).await?;
     media::set_processing(&state.db, &m.id, "ready", None).await?;
+    crate::webhooks::maybe_announce(state, &m.id).await;
     Ok(())
 }

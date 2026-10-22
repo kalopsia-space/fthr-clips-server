@@ -6,3 +6,4 @@ pub mod jobs;
 pub mod media;
 pub mod settings;
 pub mod web;
+pub mod webhooks;
