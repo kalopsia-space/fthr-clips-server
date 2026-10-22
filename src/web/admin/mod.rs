@@ -1,5 +1,7 @@
 //! Admin area: session extractors, CSRF helper and routes.
 
+pub mod api_media;
+pub mod api_tags;
 pub mod auth;
 
 use axum::extract::FromRequestParts;
@@ -7,7 +9,7 @@ use axum::http::header::{COOKIE, LOCATION};
 use axum::http::request::Parts;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{get, patch, post};
 use axum::{Json, Router};
 use serde_json::json;
 
@@ -26,6 +28,22 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/admin/logout", post(auth::logout))
         .route("/admin/api/session", get(auth::api_session))
+        .route("/admin/api/media", get(api_media::list))
+        .route("/admin/api/media/bulk", post(api_media::bulk))
+        .route(
+            "/admin/api/media/{id}",
+            get(api_media::get_one)
+                .patch(api_media::patch)
+                .delete(api_media::delete),
+        )
+        .route(
+            "/admin/api/tags",
+            get(api_tags::list).post(api_tags::create),
+        )
+        .route(
+            "/admin/api/tags/{id}",
+            patch(api_tags::patch).delete(api_tags::delete),
+        )
 }
 
 /// Placeholder dashboard; replaced by the real admin UI later.

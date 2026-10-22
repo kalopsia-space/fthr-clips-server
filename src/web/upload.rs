@@ -319,7 +319,7 @@ pub async fn store_upload(state: &AppState, mut field: Field<'_>) -> Result<Medi
 }
 
 /// The upload folder must stay inside the data dir.
-fn safe_folder(folder: &str) -> PathBuf {
+pub(crate) fn safe_folder(folder: &str) -> PathBuf {
     let p = Path::new(folder);
     if !folder.is_empty() && p.components().all(|c| matches!(c, Component::Normal(_))) {
         p.to_path_buf()
