@@ -14,7 +14,7 @@ A self-hosted clip sharing server for the FTHR desktop app: upload videos and im
 - Scan folders: index existing video and image folders without copying them.
 - Discord and generic webhooks when a clip is first made public.
 - One-command import from the old Python version; old `/files/` links keep working.
-- Small static binary builds for Linux (musl), macOS and Windows, plus a multi-arch Docker image.
+- Small static Linux binaries (x86_64 and aarch64, musl) plus a multi-arch Docker image. Linux and Docker are the supported platforms.
 
 ## Quick start
 
@@ -22,7 +22,7 @@ Both `UPLOAD_TOKEN` and an admin password are needed. Generate secrets with `ope
 
 ### Binary
 
-Download the archive for your platform from the GitHub releases page (it contains the binary, `README.md`, `LICENSE` and `config.example.toml`), then:
+Download the Linux archive for your architecture (x86_64 or aarch64) from the GitHub releases page (it contains the binary, `README.md`, `LICENSE` and `config.example.toml`), then:
 
 ```sh
 UPLOAD_TOKEN=change-me ADMIN_PASSWORD=change-me-too ./fthr-clips-server serve
@@ -147,7 +147,7 @@ cargo test --locked
 cargo run -- check
 ```
 
-Tests in `tests/ffmpeg.rs` and `tests/transcode.rs`, and the media parts of `tests/jobs.rs`, need `ffmpeg` and `ffprobe`; without them they skip. CI runs Linux with ffmpeg, and macOS and Windows without it to exercise the skip paths. Release builds for the musl targets need no system libraries because SQLite is bundled and TLS uses rustls (no OpenSSL). CI also builds the Docker image; pushing a `v*` tag builds release archives for five targets and publishes the multi-arch image to GHCR.
+Tests in `tests/ffmpeg.rs` and `tests/transcode.rs`, and the media parts of `tests/jobs.rs`, need `ffmpeg` and `ffprobe`; without them they skip. CI runs on Linux with ffmpeg installed. Release builds for the musl targets need no system libraries because SQLite is bundled and TLS uses rustls (no OpenSSL). CI also builds the Docker image; pushing a `v*` tag builds release archives for the two Linux targets and publishes the multi-arch image to GHCR. The code keeps its platform gates, but macOS and Windows are not built or tested.
 
 ## License
 

@@ -20,11 +20,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { target: x86_64-unknown-linux-musl, os: ubuntu-latest, cross: true }
-          - { target: aarch64-unknown-linux-musl, os: ubuntu-latest, cross: true }
-          - { target: x86_64-apple-darwin, os: macos-latest, cross: false }
-          - { target: aarch64-apple-darwin, os: macos-latest, cross: false }
-          - { target: x86_64-pc-windows-msvc, os: windows-latest, cross: false }
+          - { target: x86_64-unknown-linux-musl, os: ubuntu-latest }
+          - { target: aarch64-unknown-linux-musl, os: ubuntu-latest }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
@@ -35,18 +32,12 @@ jobs:
         with:
           key: ${{ matrix.target }}
       - name: Install cross
-        if: matrix.cross
         uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
         with:
           tool: cross
-      - name: Build (cross)
-        if: matrix.cross
-        run: cross build --release --locked --target ${{ matrix.target }}
       - name: Build
-        if: ${{ !matrix.cross }}
-        run: cargo build --release --locked --target ${{ matrix.target }}
-      - name: Package (unix)
-        if: runner.os != 'Windows'
+        run: cross build --release --locked --target ${{ matrix.target }}
+      - name: Package
         shell: bash
         run: |
           name="fthr-clips-server-${GITHUB_REF_NAME}-${{ matrix.target }}"
@@ -54,15 +45,6 @@ jobs:
           cp "target/${{ matrix.target }}/release/fthr-clips-server" README.md LICENSE config.example.toml "$name/"
           tar czf "$name.tar.gz" "$name"
           echo "ASSET=$name.tar.gz" >> "$GITHUB_ENV"
-      - name: Package (windows)
-        if: runner.os == 'Windows'
-        shell: bash
-        run: |
-          name="fthr-clips-server-${GITHUB_REF_NAME}-${{ matrix.target }}"
-          mkdir "$name"
-          cp "target/${{ matrix.target }}/release/fthr-clips-server.exe" README.md LICENSE config.example.toml "$name/"
-          7z a "$name.zip" "$name"
-          echo "ASSET=$name.zip" >> "$GITHUB_ENV"
       - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           files: ${{ env.ASSET }}

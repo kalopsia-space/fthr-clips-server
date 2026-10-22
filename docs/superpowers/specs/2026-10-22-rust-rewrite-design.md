@@ -497,3 +497,4 @@ Differences between this spec and the implementation, accepted during final revi
 - Image thumbnails are JPEG (`thumb.jpg`), not WebP (`thumb.webp`).
 - Scanned files default to link-only (not listed publicly) until published in the admin area.
 - Scan folder paths are configured only through environment variables or `config.toml`; the Library admin tab shows them read-only.
+- Supported platforms are Linux (x86_64 and aarch64 musl binaries) and the Docker image. The macOS and Windows builds and CI jobs listed in goal 5 and the Deploy section were dropped at the owner's request on 2026-10-22; Linux and Docker are the only platforms the project cares about.
