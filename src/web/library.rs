@@ -17,6 +17,7 @@ use crate::db::media::{self, ListQuery, Media, MediaWithViews, Sort};
 use crate::db::tags::{self, Tag};
 use crate::media::kind::MediaKind;
 use crate::settings::public_base;
+use crate::web::admin::OptionalAdmin;
 use crate::web::assets::asset_v;
 
 pub const PER_PAGE: u32 = 48;
@@ -360,6 +361,7 @@ async fn library_page(
     headers: HeaderMap,
     map: HashMap<String, String>,
     kind: MediaKind,
+    admin: Option<crate::db::sessions::Session>,
 ) -> Result<Html<String>, PageError> {
     let settings = state.settings.get();
     let p = Params::from_query(&map, Some(kind), settings.default_sort);
@@ -418,9 +420,8 @@ async fn library_page(
         pages,
         prev_href: href_with(path, &p, p.page.saturating_sub(1).max(1)),
         next_href: href_with(path, &p, p.page.saturating_add(1)),
-        // Task 9 wires the admin session extractor in.
-        signed_in: false,
-        admin_csrf: None,
+        signed_in: admin.is_some(),
+        admin_csrf: admin.map(|s| s.csrf),
     };
     render(&page)
 }
@@ -429,20 +430,22 @@ async fn library_page(
 pub async fn videos(
     State(state): State<AppState>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    OptionalAdmin(admin): OptionalAdmin,
     headers: HeaderMap,
     Query(map): Query<HashMap<String, String>>,
 ) -> Result<Html<String>, PageError> {
-    library_page(state, peer, headers, map, MediaKind::Video).await
+    library_page(state, peer, headers, map, MediaKind::Video, admin).await
 }
 
 /// `GET /images`.
 pub async fn images(
     State(state): State<AppState>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    OptionalAdmin(admin): OptionalAdmin,
     headers: HeaderMap,
     Query(map): Query<HashMap<String, String>>,
 ) -> Result<Html<String>, PageError> {
-    library_page(state, peer, headers, map, MediaKind::Image).await
+    library_page(state, peer, headers, map, MediaKind::Image, admin).await
 }
 
 #[derive(Serialize)]

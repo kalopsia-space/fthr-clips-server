@@ -44,10 +44,22 @@ impl TestServer {
         });
         TestServer {
             base,
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .unwrap(),
             data_dir,
             db,
         }
+    }
+
+    /// A client that keeps cookies and does not follow redirects.
+    pub fn client_with_cookies(&self) -> reqwest::Client {
+        reqwest::Client::builder()
+            .cookie_store(true)
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap()
     }
 
     pub fn db(&self) -> &Db {
