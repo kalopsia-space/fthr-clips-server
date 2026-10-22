@@ -29,16 +29,17 @@ impl TestServer {
         let config = Config::from_env_map(&vars, None).unwrap();
         let db = Db::open(&config.data_dir.join("library.db")).await.unwrap();
         let settings = Arc::new(SettingsStore::load(&db, &config).await.unwrap());
-        let state = AppState {
-            config: Arc::new(config),
-            db,
-            settings,
-        };
+        let state = AppState::new(config, db, settings);
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
         let app = build_router(state);
         tokio::spawn(async move {
-            axum::serve(listener, app).await.unwrap();
+            axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+            )
+            .await
+            .unwrap();
         });
         TestServer {
             base,
