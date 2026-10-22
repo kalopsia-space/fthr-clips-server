@@ -89,6 +89,7 @@ CREATE TABLE job (
 );
 CREATE INDEX idx_job_state_kind ON job(state, kind);
 CREATE INDEX idx_job_media ON job(media_id);
+CREATE UNIQUE INDEX idx_job_active ON job(media_id, kind) WHERE state IN ('queued', 'running');
 
 CREATE TABLE rendition (
     media_id TEXT NOT NULL REFERENCES media(id) ON DELETE CASCADE,
