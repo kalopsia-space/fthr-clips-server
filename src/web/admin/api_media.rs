@@ -660,15 +660,11 @@ async fn remove_rendition(state: &AppState, m: &Media, height: i64) -> Result<()
     }
     jobs::rendition_delete(&state.db, &m.id, height).await?;
     let derived = DerivedPaths::new(&state.config.data_dir, &m.id);
-    for f in [
-        derived.rendition(h),
-        derived.dir().join(format!("{h}p.tmp.mp4")),
-    ] {
-        match tokio::fs::remove_file(&f).await {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(anyhow::Error::from(e).into()),
-        }
+    derived.remove_rendition_tmps(h);
+    match tokio::fs::remove_file(derived.rendition(h)).await {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(anyhow::Error::from(e).into()),
     }
     Ok(())
 }

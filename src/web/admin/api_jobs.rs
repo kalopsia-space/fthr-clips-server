@@ -100,8 +100,7 @@ pub async fn cancel(
         {
             jobs::rendition_fail(&state.db, &job.media_id, i64::from(h), "cancelled").await?;
             let tmp = crate::media::paths::DerivedPaths::new(&state.config.data_dir, &job.media_id)
-                .dir()
-                .join(format!("{h}p.tmp.mp4"));
+                .rendition_tmp(h, job.id);
             let _ = tokio::fs::remove_file(tmp).await;
         }
         crate::jobs::worker::emit(&state, &job, "cancelled", job.progress, None);
