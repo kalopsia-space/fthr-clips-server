@@ -514,7 +514,7 @@ async fn job_lifecycle() {
         "cancelled"
     );
 
-    db::jobs::retry(&db, id).await.unwrap();
+    assert!(db::jobs::retry(&db, id).await.unwrap());
     let j = db::jobs::list_for_media(&db, "a").await.unwrap();
     let j = j.iter().find(|j| j.id == id).unwrap();
     assert_eq!((j.state.as_str(), j.error.as_deref()), ("queued", None));
@@ -598,4 +598,26 @@ async fn renditions_upsert_ready_delete() {
     let all = db::jobs::renditions_for(&db, "a").await.unwrap();
     assert_eq!(all.len(), 1);
     assert_eq!(all[0].height, 480);
+}
+
+#[tokio::test]
+async fn retry_refuses_when_an_active_job_exists() {
+    let db = Db::open_memory().await.unwrap();
+    add(&db, "a", "A").await;
+    let a = db::jobs::enqueue(&db, "a", "probe").await.unwrap();
+    db::jobs::claim_next(&db, &["probe"]).await.unwrap();
+    db::jobs::fail(&db, a, "bad").await.unwrap();
+    let b = db::jobs::enqueue(&db, "a", "probe").await.unwrap();
+    assert_ne!(a, b);
+
+    assert!(!db::jobs::retry(&db, a).await.unwrap());
+    let jobs = db::jobs::list_for_media(&db, "a").await.unwrap();
+    assert_eq!(jobs.iter().find(|j| j.id == a).unwrap().state, "failed");
+
+    db::jobs::cancel(&db, b).await.unwrap();
+    assert!(db::jobs::retry(&db, a).await.unwrap());
+    let jobs = db::jobs::list_for_media(&db, "a").await.unwrap();
+    assert_eq!(jobs.iter().find(|j| j.id == a).unwrap().state, "queued");
+    // Not retryable once active.
+    assert!(!db::jobs::retry(&db, a).await.unwrap());
 }
