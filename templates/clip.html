@@ -18,6 +18,7 @@
 {% endif %}<meta name="twitter:title" content="{{ media.title }}">
 <meta name="twitter:image" content="{{ og_image }}">
 {% endblock %}
+{% block scripts %}{% if signed_in %}<script src="/static/admin.js?v={{ asset_v }}" defer></script>{% endif %}{% endblock %}
 {% block content %}
 <div class="clip">
   <div class="player">
@@ -43,10 +44,13 @@
       {% endif %}
     </div>
   </div>
-  <aside class="panel">
+  <aside class="panel" data-id="{{ media.id }}" data-source="{% if is_scan %}scan{% else %}upload{% endif %}">
+    {% if signed_in %}{% include "partials/panel_visibility.html" %}{% endif %}
     {% include "partials/panel_share.html" %}
     {% include "partials/panel_details.html" %}
     {% include "partials/panel_file.html" %}
+    {% if signed_in %}{% include "partials/panel_delete.html" %}{% endif %}
   </aside>
 </div>
+{% if signed_in %}{% include "partials/delete_dialog.html" %}{% endif %}
 {% endblock %}

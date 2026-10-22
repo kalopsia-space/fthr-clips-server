@@ -1,0 +1,9 @@
+<section class="sect">
+  <h2 class="hd">Visibility</h2>
+  <div class="bd">
+    <div class="seg" role="group" aria-label="Visibility">
+      <button type="button" class="seg-btn{% if media.public %} on{% endif %}" data-visibility="public" aria-pressed="{% if media.public %}true{% else %}false{% endif %}">Public</button>
+      <button type="button" class="seg-btn{% if !media.public %} on{% endif %}" data-visibility="link_only" aria-pressed="{% if media.public %}false{% else %}true{% endif %}">Link only</button>
+    </div>
+  </div>
+</section>

@@ -36,7 +36,7 @@ async fn login_sets_cookie_and_dashboard_is_gated() {
         .unwrap()
         .to_string();
     assert!(set.starts_with("fthr_admin="), "{set}");
-    let r = c.get(s.url("/admin")).send().await.unwrap();
+    let r = c.get(s.url("/admin/files")).send().await.unwrap();
     assert_eq!(r.status(), 200);
     let r = c.get(s.url("/admin/api/session")).send().await.unwrap();
     assert_eq!(r.json::<Value>().await.unwrap()["csrf"], csrf);
