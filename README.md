@@ -2,7 +2,7 @@
 
 A self-hosted clip sharing server for the FTHR desktop app: upload videos and images, get a link, browse a library, and optionally transcode for playback everywhere. A single Rust binary with an embedded SQLite database.
 
-> Built by an FTHR maintainer; not an official FTHR Community release.
+> Built by FTHR's linux branch maintainer; not an official FTHR Community release.
 
 ## Features
 
