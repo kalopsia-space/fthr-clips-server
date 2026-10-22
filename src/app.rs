@@ -35,6 +35,7 @@ impl AppState {
 pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(web::healthz))
+        .merge(web::upload_routes(state.config.max_upload_bytes))
         // Later tasks must add routes and fallbacks ABOVE this line: `layer`
         // only wraps what is registered before it.
         .layer(axum::middleware::from_fn_with_state(
