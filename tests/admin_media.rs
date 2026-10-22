@@ -452,6 +452,7 @@ async fn move_clash_is_409_and_keeps_both_files() {
     let _ = a;
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn move_through_symlink_out_of_root_is_refused() {
     let s = server().await;

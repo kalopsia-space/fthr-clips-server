@@ -202,6 +202,7 @@ async fn derived_file_is_served_with_cache_header() {
 }
 
 #[cfg(unix)]
+#[cfg(unix)]
 #[tokio::test]
 async fn symlink_outside_roots_is_404() {
     let s = TestServer::spawn(ENV).await;

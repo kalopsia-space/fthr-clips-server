@@ -1,7 +1,7 @@
 use serde::Serialize;
 use sqlx::FromRow;
 
-use super::{Db, Result};
+use super::{Db, MediaKind, Result};
 
 pub const DEFAULT_COLOUR: &str = "#20e3a0";
 
@@ -52,6 +52,20 @@ pub async fn list_all(db: &Db) -> Result<Vec<Tag>> {
     Ok(sqlx::query_as("SELECT * FROM tag ORDER BY name")
         .fetch_all(&db.0)
         .await?)
+}
+
+/// Tags attached to at least one public, available media of `kind`.
+pub async fn list_for_public(db: &Db, kind: Option<MediaKind>) -> Result<Vec<Tag>> {
+    Ok(sqlx::query_as(
+        "SELECT t.* FROM tag t WHERE EXISTS (SELECT 1 FROM media_tag mt \
+         JOIN media m ON m.id = mt.media_id \
+         WHERE mt.tag_id = t.id AND m.public = 1 AND m.available = 1 \
+         AND (? IS NULL OR m.kind = ?)) ORDER BY t.name",
+    )
+    .bind(kind)
+    .bind(kind)
+    .fetch_all(&db.0)
+    .await?)
 }
 
 pub async fn attach(db: &Db, media_id: &str, tag_id: i64) -> Result<()> {

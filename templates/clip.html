@@ -28,9 +28,12 @@
     <div class="stage">
       <video id="player" controls preload="metadata" poster="{{ poster_url }}" data-start="{{ start }}" playsinline>
         {% for s in sources %}<source src="{{ s.url }}" type="{{ s.mime }}">
-        {% endfor %}
+        {% endfor %}{% if let Some(f) = fallback_source %}<source src="{{ f.url }}" type="{{ f.mime }}">
+        {% endif %}
       </video>
     </div>
+    {% if fallback_source.is_some() %}<p class="desc">This format may not play in your browser{% if transcode_pending %}; a web-compatible version is being prepared{% endif %}.</p>
+    {% endif %}
     {% endif %}
     <div class="under">
       <h1>{{ media.title }}</h1>

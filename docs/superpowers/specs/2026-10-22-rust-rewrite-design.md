@@ -489,3 +489,11 @@ My calls, so the owner can check them:
 - CI matrix specifics, cross-compilation tooling (cross, cargo-zigbuild).
 - Filename date parsing patterns.
 - How the mobile bottom bar looks.
+
+## Recorded deviations
+
+Differences between this spec and the implementation, accepted during final review:
+
+- Image thumbnails are JPEG (`thumb.jpg`), not WebP (`thumb.webp`).
+- Scanned files default to link-only (not listed publicly) until published in the admin area.
+- Scan folder paths are configured only through environment variables or `config.toml`; the Library admin tab shows them read-only.

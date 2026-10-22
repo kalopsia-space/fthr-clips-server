@@ -135,6 +135,10 @@ pub struct ClipPage {
     pub media: Media,
     pub is_image: bool,
     pub sources: Vec<PlaybackSource>,
+    /// Shown only when no source is playable: the original, as a last resort.
+    pub fallback_source: Option<PlaybackSource>,
+    /// A transcode is queued or running for this video.
+    pub transcode_pending: bool,
     pub og_video: Option<PlaybackSource>,
     pub base: String,
     pub secure: bool,
@@ -291,6 +295,22 @@ async fn clip_page(
     let renditions = jobs::renditions_for(&state.db, &m.id).await?;
     let sources = playback_sources(&m, &renditions);
     let og = og_video(&sources).cloned();
+    let transcode_pending = renditions
+        .iter()
+        .any(|r| matches!(r.state.as_str(), "queued" | "running"));
+    let fallback_source = if sources.is_empty() {
+        let mime = mime_guess::from_ext(&m.extension)
+            .first()
+            .map(|x| x.essence_str().to_string())
+            .unwrap_or_else(|| "video/mp4".into());
+        Some(PlaybackSource {
+            url: media_url(&m, &format!("original.{}", m.extension)),
+            label: "Source".into(),
+            mime,
+        })
+    } else {
+        None
+    };
     let quality = quality_rows(&settings.ladder, &renditions, admin.is_some());
     let tags = crate::db::tags::for_media(&state.db, &m.id).await?;
 
@@ -377,11 +397,15 @@ async fn clip_page(
             .join(", "),
         quality,
         sources,
+        fallback_source,
+        transcode_pending,
         base,
         media: m,
     };
     let mut resp = render(&page)?.into_response();
-    resp.extensions_mut().insert(AllowFraming);
+    if !page.signed_in {
+        resp.extensions_mut().insert(AllowFraming);
+    }
     Ok(resp)
 }
 
@@ -467,6 +491,8 @@ async fn image_response(
         media: m,
     };
     let mut resp = render(&page)?.into_response();
-    resp.extensions_mut().insert(AllowFraming);
+    if !page.signed_in {
+        resp.extensions_mut().insert(AllowFraming);
+    }
     Ok(resp)
 }

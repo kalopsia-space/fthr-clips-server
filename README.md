@@ -49,7 +49,7 @@ cp .env.example .env     # then set UPLOAD_TOKEN, ADMIN_PASSWORD and PUBLIC_BASE
 docker compose up -d --build
 ```
 
-The service is published on `127.0.0.1:18080`; put a reverse proxy in front (see below). Uncomment the `/videos` and `/images` mounts in `docker-compose.yml` and set `VIDEO_DIRS=/videos` / `IMAGE_DIRS=/images` in `.env` to use scan folders. `mem_limit` is 2g; 1g is enough with `TRANSCODING=off`.
+The service is published on `127.0.0.1:18080`; put a reverse proxy in front (see below). Uncomment the `/videos` and `/images` mounts in `docker-compose.yml` and set `VIDEO_DIRS=/videos` / `IMAGE_DIRS=/images` in `.env` to use scan folders. `mem_limit` is 2g (1g is enough with `TRANSCODING=off`) and `pids_limit` is 256, because libx264 is multi-threaded and needs process headroom for transcoding on many-core hosts.
 
 ## Desktop app setup
 
@@ -75,7 +75,7 @@ Additional upload tokens can be created in `/admin/tokens`.
 | `BIND_HOST` | `127.0.0.1` (`0.0.0.0` in Docker) | Address to listen on. |
 | `PORT` | `8080` | Port to listen on. |
 | `TRUSTED_PROXIES` | none | Comma-separated IPs or CIDRs of reverse proxies whose `X-Forwarded-For` is trusted. |
-| `SCAN_INTERVAL_MINUTES` | `15` | How often scan folders are rescanned. |
+| `SCAN_INTERVAL_MINUTES` | `5` | How often scan folders are rescanned. |
 | `TRANSCODING` | `compat` | `off`, `compat` or `on`. See Transcoding. |
 | `ENCODER` | `auto` | `auto`, `x264`, `nvenc`, `vaapi`, `qsv` or `videotoolbox`. |
 | `TRANSCODE_WORKERS` | `1` | Number of concurrent transcodes. |
@@ -126,7 +126,7 @@ Point the new server at the old data directory (for example the same Docker volu
 fthr-clips-server import-legacy
 ```
 
-For each old `<id>.json` sidecar the file is moved into `uploads/` under its original name, added to the library (the old "listed" flag becomes public), and queued for thumbnailing and transcoding. Old `/files/<id>` links redirect to the new pages. Files are moved, not copied, so disk use does not double. The import also runs automatically on first start when the data directory contains legacy sidecars and no `library.db`.
+For each old `<id>.json` sidecar the file is moved into `uploads/` under its original name, added to the library (the old "listed" flag becomes public), and queued for thumbnailing and transcoding. Old `/files/<id>` links redirect to the new pages. Files are moved, not copied, so disk use does not double. The import also runs automatically at startup whenever the data directory contains pending legacy `{id}.json` sidecar/file pairs, whether or not `library.db` already exists.
 
 ## CLI subcommands
 

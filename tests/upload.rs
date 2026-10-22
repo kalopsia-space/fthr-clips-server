@@ -218,3 +218,29 @@ async fn traversal_filename_stays_in_uploads() {
     assert_eq!(upload_files(&s), vec!["evil.mp4".to_string()]);
     assert!(!s.data_dir.path().join("evil.mp4").exists());
 }
+
+#[tokio::test]
+async fn failed_auth_is_throttled_but_valid_token_still_works() {
+    let s = TestServer::spawn(ENV).await;
+    let mut last = 0;
+    for _ in 0..21 {
+        last = s
+            .client
+            .head(s.url("/upload"))
+            .bearer_auth("bad")
+            .send()
+            .await
+            .unwrap()
+            .status()
+            .as_u16();
+    }
+    assert_eq!(last, 429);
+    let r = s
+        .client
+        .head(s.url("/upload"))
+        .bearer_auth("t")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+}
