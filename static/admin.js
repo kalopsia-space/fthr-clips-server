@@ -276,6 +276,56 @@
     });
   });
 
+  // ---- Tokens page ----
+  var tokNew = $("#token-new");
+  if (tokNew) {
+    var tokDlg = $("#token-created");
+    tokNew.addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var name = $("#token-new-name").value.trim();
+      if (!name) { return; }
+      api("POST", "/admin/api/tokens", { name: name }).then(function (res) {
+        $("#token-value").value = res.token;
+        tokDlg.addEventListener("close", reload, { once: true });
+        tokDlg.showModal();
+        $("#token-value").select();
+      }, fail);
+    });
+    $("#token-copy").addEventListener("click", function () {
+      var input = $("#token-value");
+      input.select();
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(input.value).then(function () { toast("Copied"); }, function () { document.execCommand("copy"); });
+      } else {
+        document.execCommand("copy");
+      }
+    });
+    $("#token-done").addEventListener("click", function () { tokDlg.close(); });
+    $$("#tokens .token-revoke").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var tr = btn.closest("tr");
+        var dlg = $("#token-revoke-dialog");
+        $("#token-revoke-text").textContent = "Revoke the token \"" + tr.getAttribute("data-name") + "\"? Uploads using it will stop working.";
+        var ok = $("#token-revoke-confirm");
+        var cancel = $("#token-revoke-cancel");
+        var cleanup = function () {
+          ok.removeEventListener("click", onOk);
+          cancel.removeEventListener("click", onCancel);
+          dlg.removeEventListener("close", cleanup);
+        };
+        var onOk = function () {
+          cleanup(); dlg.close();
+          api("DELETE", "/admin/api/tokens/" + encodeURIComponent(tr.getAttribute("data-token-id"))).then(reload, fail);
+        };
+        var onCancel = function () { cleanup(); dlg.close(); };
+        ok.addEventListener("click", onOk);
+        cancel.addEventListener("click", onCancel);
+        dlg.addEventListener("close", cleanup);
+        dlg.showModal();
+      });
+    });
+  }
+
   // ---- Clip page editor ----
   var panel = $(".panel[data-id]");
   if (panel && $("#details-form")) {

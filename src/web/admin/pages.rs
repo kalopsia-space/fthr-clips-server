@@ -233,6 +233,67 @@ pub async fn tags(
     Ok(render(&page)?.into_response())
 }
 
+pub struct TokenRow {
+    pub id: i64,
+    pub name: String,
+    pub prefix: String,
+    pub created: String,
+    pub last_used: String,
+    pub revoked: bool,
+}
+
+#[derive(Template)]
+#[template(path = "admin/tokens.html")]
+pub struct TokensPage {
+    pub title: String,
+    pub site_title: String,
+    pub asset_v: &'static str,
+    pub rail: &'static str,
+    pub search_action: &'static str,
+    pub q: String,
+    pub signed_in: bool,
+    pub admin_csrf: Option<String>,
+    pub active: &'static str,
+    pub tabs: [(&'static str, &'static str, &'static str); 7],
+    pub tokens: Vec<TokenRow>,
+}
+
+/// `GET /admin/tokens`.
+pub async fn tokens(
+    AdminSession(session): AdminSession,
+    State(state): State<AppState>,
+) -> Result<Response, PageError> {
+    let site_title = state.settings.get().site_title.clone();
+    let day = |d: chrono::DateTime<chrono::Utc>| d.format("%Y-%m-%d %H:%M").to_string();
+    let rows = crate::db::tokens::list(&state.db)
+        .await?
+        .into_iter()
+        .rev()
+        .map(|t| TokenRow {
+            id: t.id,
+            name: t.name,
+            prefix: t.prefix,
+            created: day(t.created_at),
+            last_used: t.last_used_at.map(day).unwrap_or_else(|| "never".into()),
+            revoked: t.revoked_at.is_some(),
+        })
+        .collect();
+    let page = TokensPage {
+        title: format!("Tokens - {site_title}"),
+        site_title,
+        asset_v: asset_v(),
+        rail: "admin",
+        search_action: "/admin/files",
+        q: String::new(),
+        signed_in: true,
+        admin_csrf: Some(session.csrf),
+        active: "tokens",
+        tabs: TABS,
+        tokens: rows,
+    };
+    Ok(render(&page)?.into_response())
+}
+
 /// Plain-string view of the settings for the form templates.
 pub struct SettingsView {
     pub site_title: String,
