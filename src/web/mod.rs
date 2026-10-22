@@ -1,3 +1,4 @@
+pub mod media_files;
 pub mod security;
 pub mod upload;
 
