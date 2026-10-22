@@ -48,6 +48,8 @@ jobs:
       - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           files: ${{ env.ASSET }}
+          # Tags with a suffix (v2.0.0-alpha.1, v2.1.0-rc1) are pre-releases.
+          prerelease: ${{ contains(github.ref_name, '-') }}
 
   image:
     runs-on: ubuntu-latest
