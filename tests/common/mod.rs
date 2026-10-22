@@ -51,4 +51,33 @@ impl TestServer {
     pub fn url(&self, path: &str) -> String {
         format!("{}{}", self.base, path)
     }
+
+    pub async fn upload(
+        &self,
+        name: &str,
+        bytes: Vec<u8>,
+        token: Option<&str>,
+    ) -> reqwest::Response {
+        let part = reqwest::multipart::Part::bytes(bytes).file_name(name.to_string());
+        let form = reqwest::multipart::Form::new().part("clip", part);
+        let mut req = self.client.post(self.url("/upload")).multipart(form);
+        if let Some(t) = token {
+            req = req.bearer_auth(t);
+        }
+        req.send().await.unwrap()
+    }
+}
+
+pub fn tiny_mp4() -> Vec<u8> {
+    let mut v = vec![0u8; 1024];
+    let head = b"\0\0\0\x18ftypisom\0\0\0\0isomiso2mp41";
+    v[..head.len()].copy_from_slice(head);
+    v
+}
+
+pub fn tiny_png() -> Vec<u8> {
+    let mut v = vec![0u8; 1024];
+    let head = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR";
+    v[..head.len()].copy_from_slice(head);
+    v
 }
