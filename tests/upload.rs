@@ -156,3 +156,65 @@ async fn image_upload_gets_i_slug() {
         .unwrap();
     assert!(j["url"].as_str().unwrap().contains("/i/"));
 }
+
+fn upload_sizes(s: &TestServer) -> Vec<u64> {
+    let mut v: Vec<u64> = std::fs::read_dir(s.data_dir.path().join("uploads"))
+        .unwrap()
+        .map(|e| e.unwrap().metadata().unwrap().len())
+        .collect();
+    v.sort();
+    v
+}
+
+#[tokio::test]
+async fn concurrent_same_name_uploads_do_not_clobber() {
+    let s = TestServer::spawn(ENV).await;
+    let a = tiny_mp4();
+    let mut b = tiny_mp4();
+    b.extend_from_slice(&[7u8; 1024]);
+    let (ra, rb) = tokio::join!(
+        s.upload("x.mp4", a, Some("t")),
+        s.upload("x.mp4", b, Some("t"))
+    );
+    assert_eq!(ra.status(), 200);
+    assert_eq!(rb.status(), 200);
+    let ja: serde_json::Value = ra.json().await.unwrap();
+    let jb: serde_json::Value = rb.json().await.unwrap();
+    assert_ne!(ja["id"], jb["id"]);
+    assert_eq!(ja["bytes"], 1024);
+    assert_eq!(jb["bytes"], 2048);
+    assert_eq!(upload_files(&s).len(), 2);
+    assert_eq!(upload_sizes(&s), vec![1024, 2048]);
+}
+
+#[tokio::test]
+async fn non_ascii_name_keeps_extension() {
+    let s = TestServer::spawn(ENV).await;
+    let r = s.upload("é.mp4", tiny_mp4(), Some("t")).await;
+    assert_eq!(r.status(), 200);
+    let files = upload_files(&s);
+    assert_eq!(files.len(), 1);
+    assert!(
+        files[0].ends_with(".mp4") && files[0].len() > 4,
+        "{files:?}"
+    );
+}
+
+#[tokio::test]
+async fn large_oversize_aborts_stream_and_cleans_up() {
+    let s = TestServer::spawn(&[("UPLOAD_TOKEN", "t"), ("MAX_UPLOAD_BYTES", "20000")]).await;
+    let mut body = tiny_mp4();
+    body.resize(64 * 1024, 1);
+    let r = s.upload(NAME, body, Some("t")).await;
+    assert_eq!(r.status(), 413);
+    assert!(upload_files(&s).is_empty());
+}
+
+#[tokio::test]
+async fn traversal_filename_stays_in_uploads() {
+    let s = TestServer::spawn(ENV).await;
+    let r = s.upload("../../evil.mp4", tiny_mp4(), Some("t")).await;
+    assert_eq!(r.status(), 200);
+    assert_eq!(upload_files(&s), vec!["evil.mp4".to_string()]);
+    assert!(!s.data_dir.path().join("evil.mp4").exists());
+}
