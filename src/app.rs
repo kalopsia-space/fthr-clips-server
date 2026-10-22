@@ -99,7 +99,7 @@ pub async fn serve(config: Config) -> anyhow::Result<()> {
             *slot.write().await = found;
         });
     }
-    crate::jobs::spawn_pools(&state);
+    crate::jobs::spawn_pools(&state).await;
     axum::serve(
         listener,
         build_router(state).into_make_service_with_connect_info::<SocketAddr>(),

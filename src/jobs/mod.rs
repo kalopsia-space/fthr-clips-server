@@ -90,8 +90,14 @@ pub async fn enqueue_for_new_media(state: &AppState, media: &Media) {
     }
 }
 
-/// Start the light and heavy worker pools.
-pub fn spawn_pools(state: &AppState) {
+/// Start the light and heavy worker pools. Jobs left `running` by a previous
+/// process are put back in the queue first.
+pub async fn spawn_pools(state: &AppState) {
+    match db::jobs::reset_stale_running(&state.db).await {
+        Ok(0) => {}
+        Ok(n) => tracing::info!("requeued {n} interrupted job(s)"),
+        Err(e) => tracing::warn!("resetting interrupted jobs: {e:#}"),
+    }
     let ffmpeg = state.ffmpeg.available();
     let light: Vec<String> = if ffmpeg {
         [PROBE, POSTER, PREVIEW, THUMB]

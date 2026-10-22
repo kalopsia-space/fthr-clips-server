@@ -245,3 +245,26 @@ async fn stats_endpoint_shape() {
             || (j["disk"]["total"].as_u64().unwrap() > 0 && j["disk"]["path"].is_string())
     );
 }
+
+#[tokio::test]
+async fn stale_running_jobs_are_requeued() {
+    use fthr_clips_server::db::jobs;
+    let s = server(&[
+        ("FFMPEG_PATH", "/nonexistent"),
+        ("FFPROBE_PATH", "/nonexistent"),
+    ])
+    .await;
+    let id = upload_id(&s, "clip.mp4", tiny_mp4()).await;
+    let job = jobs::claim_next(s.db(), &["probe"]).await.unwrap().unwrap();
+    assert_eq!(job.state, "running");
+    assert_eq!(jobs::reset_stale_running(s.db()).await.unwrap(), 1);
+    let j = jobs::get(s.db(), job.id).await.unwrap().unwrap();
+    assert_eq!(
+        (j.state.as_str(), j.error.as_deref(), j.attempts),
+        ("queued", Some("interrupted"), 1)
+    );
+    assert_eq!(j.media_id, id);
+    // Guarded finish/fail do nothing on a non-running job.
+    assert!(!jobs::finish(s.db(), job.id).await.unwrap());
+    assert!(!jobs::fail(s.db(), job.id, "x").await.unwrap());
+}

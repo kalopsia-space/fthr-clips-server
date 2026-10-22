@@ -518,7 +518,15 @@ async fn job_lifecycle() {
     let j = db::jobs::list_for_media(&db, "a").await.unwrap();
     let j = j.iter().find(|j| j.id == id).unwrap();
     assert_eq!((j.state.as_str(), j.error.as_deref()), ("queued", None));
-    db::jobs::finish(&db, id).await.unwrap();
+    assert!(
+        !db::jobs::finish(&db, id).await.unwrap(),
+        "only running jobs finish"
+    );
+    let claimed = db::jobs::claim_next(&db, &["probe"])
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(db::jobs::finish(&db, claimed.id).await.unwrap());
     assert_eq!(db::jobs::list_active(&db).await.unwrap().len(), 1);
 }
 
