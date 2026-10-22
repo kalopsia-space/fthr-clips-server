@@ -2,7 +2,7 @@ mod common;
 
 use std::time::Duration;
 
-use common::{fixture_mp4, login, tiny_mp4, TestServer};
+use common::{fixture_mp4, login, real_png, tiny_mp4, TestServer};
 use fthr_clips_server::db::media;
 use serde_json::{json, Value};
 
@@ -13,15 +13,6 @@ async fn server(extra: &[(&str, &str)]) -> TestServer {
     let mut env = vec![("ADMIN_PASSWORD", PW), ("UPLOAD_TOKEN", "t")];
     env.extend_from_slice(extra);
     TestServer::spawn(&env).await
-}
-
-fn real_png() -> Vec<u8> {
-    let img = image::RgbImage::from_fn(1600, 900, |x, y| {
-        image::Rgb([(x % 256) as u8, (y % 256) as u8, 7])
-    });
-    let mut out = std::io::Cursor::new(Vec::new());
-    img.write_to(&mut out, image::ImageFormat::Png).unwrap();
-    out.into_inner()
 }
 
 async fn upload_id(s: &TestServer, name: &str, bytes: Vec<u8>) -> String {

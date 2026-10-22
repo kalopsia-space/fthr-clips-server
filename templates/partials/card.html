@@ -2,14 +2,14 @@
   <a class="thumb" href="{{ item.href }}"{% if let Some(p) = item.preview_url %} data-preview="{{ p }}"{% endif %}>
     <img class="poster" src="{{ item.poster_url }}" alt="" loading="lazy">
     {% if !item.res.is_empty() %}<span class="pill res">{{ item.res }}</span>{% endif %}
-    {% if item.is_image %}<span class="pill badge">Screenshot</span>{% else %}<span class="pill dur">{{ item.duration }}</span>{% endif %}
-    <span class="play"><span><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ asset_v }}#i-play"/></svg></span></span>
+    {% if !item.is_image %}<span class="pill dur">{{ item.duration }}</span>{% endif %}
+    {% if !item.is_image %}<span class="play"><span><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ asset_v }}#i-play"/></svg></span></span>{% endif %}
   </a>
   <div class="cbody">
     <div class="t">
       <a class="title" href="{{ item.href }}" title="{{ item.title }}">{{ item.title }}</a>
       <div class="meta">{{ item.meta }}</div>
-      {% if !item.tags.is_empty() %}<div class="tags">{% for tag in item.tags %}<a class="tag" href="/?tag={{ tag.name_enc }}" data-colour="{{ tag.colour }}">{{ tag.name }}</a>{% endfor %}</div>{% endif %}
+      {% if !item.tags.is_empty() %}<div class="tags">{% for tag in item.tags %}<a class="tag" href="{{ tag_path }}?tag={{ tag.name_enc }}" data-colour="{{ tag.colour }}">{{ tag.name }}</a>{% endfor %}</div>{% endif %}
     </div>
     <button class="share" type="button" data-copy="{{ item.share_url }}" title="Copy link" aria-label="Copy link"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ asset_v }}#i-copylink"/></svg></button>
   </div>

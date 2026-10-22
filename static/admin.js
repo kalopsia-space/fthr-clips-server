@@ -422,7 +422,7 @@
         confirmDelete(1, hasScan).then(function (res) {
           if (!res) { return; }
           api("DELETE", mediaUrl + "?delete_file=" + (res.deleteFile ? "true" : "false")).then(function () {
-            window.location.href = "/";
+            window.location.href = document.querySelector(".imageview") ? "/images" : "/";
           }, fail);
         });
       });
