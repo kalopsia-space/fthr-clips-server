@@ -163,6 +163,51 @@ pub struct ClipPage {
     pub quality: Vec<QualityRow>,
 }
 
+#[derive(Template)]
+#[template(path = "image.html")]
+pub struct ImagePage {
+    pub title: String,
+    pub site_title: String,
+    pub asset_v: &'static str,
+    pub rail: &'static str,
+    pub search_action: &'static str,
+    pub q: String,
+    pub media: Media,
+    pub is_image: bool,
+    pub page_url: String,
+    pub og_image: String,
+    pub og_mime: String,
+    pub og_description: String,
+    pub original_url: String,
+    pub download_url: String,
+    pub meta_line: String,
+    pub dimensions: String,
+    pub format: String,
+    pub file_name: String,
+    pub size: String,
+    pub date_label: &'static str,
+    pub date_full: String,
+    pub views: i64,
+    pub tags: Vec<TagView>,
+    pub share_url: String,
+    pub signed_in: bool,
+    pub admin_csrf: Option<String>,
+    pub is_scan: bool,
+    pub tags_csv: String,
+    // Read by the shared Details panel; meaningless for images.
+    pub duration: String,
+    pub resolution: String,
+    pub bitrate: String,
+    pub renditions: String,
+}
+
+pub fn format_label(ext: &str) -> String {
+    match ext.to_ascii_lowercase().as_str() {
+        "jpeg" | "jpg" => "JPG".into(),
+        e => e.to_ascii_uppercase(),
+    }
+}
+
 fn parse_start(map: &HashMap<String, String>) -> String {
     match map.get("t").and_then(|t| t.parse::<f64>().ok()) {
         Some(t) if t.is_finite() && t > 0.0 && t < 86_400.0 * 7.0 => format!("{}", t.floor()),
@@ -240,20 +285,17 @@ async fn clip_page(
     let base = public_base(&settings, &headers, peer.ip(), trusted);
     let secure = base.starts_with("https://") || request_is_https(&headers, peer.ip(), trusted);
     let is_image = kind == MediaKind::Image;
+    if is_image {
+        return image_response(&state, m, admin, base, views).await;
+    }
     let renditions = jobs::renditions_for(&state.db, &m.id).await?;
     let sources = playback_sources(&m, &renditions);
     let og = og_video(&sources).cloned();
-    let quality = if is_image {
-        Vec::new()
-    } else {
-        quality_rows(&settings.ladder, &renditions, admin.is_some())
-    };
+    let quality = quality_rows(&settings.ladder, &renditions, admin.is_some());
     let tags = crate::db::tags::for_media(&state.db, &m.id).await?;
 
     let original_path = media_url(&m, &format!("original.{}", m.extension));
-    let poster = if is_image {
-        original_path.clone()
-    } else if m.has_poster {
+    let poster = if m.has_poster {
         media_url(&m, "poster.jpg")
     } else {
         PLACEHOLDER_URL.to_string()
@@ -289,10 +331,10 @@ async fn clip_page(
         title: format!("{} - {}", m.title, settings.site_title),
         site_title: settings.site_title.clone(),
         asset_v: asset_v(),
-        rail: if is_image { "images" } else { "clips" },
-        search_action: if is_image { "/images" } else { "/" },
+        rail: "clips",
+        search_action: "/",
         q: String::new(),
-        is_image,
+        is_image: false,
         og_video: og,
         secure,
         page_url: format!("{base}{}", page_path(&m)),
@@ -336,6 +378,92 @@ async fn clip_page(
         quality,
         sources,
         base,
+        media: m,
+    };
+    let mut resp = render(&page)?.into_response();
+    resp.extensions_mut().insert(AllowFraming);
+    Ok(resp)
+}
+
+async fn image_response(
+    state: &AppState,
+    m: Media,
+    admin: Option<crate::db::sessions::Session>,
+    base: String,
+    views: i64,
+) -> Result<Response, PageError> {
+    let settings = state.settings.get();
+    let tags = crate::db::tags::for_media(&state.db, &m.id).await?;
+    let original_path = media_url(&m, &format!("original.{}", m.extension));
+    let now = chrono::Utc::now();
+    let local = when(&m).with_timezone(&chrono::Local);
+    let date_label = if m.recorded_at.is_some() {
+        "Recorded"
+    } else {
+        "Uploaded"
+    };
+    let dimensions = match (m.width, m.height) {
+        (Some(w), Some(h)) if w > 0 && h > 0 => format!("{w}\u{d7}{h}"),
+        _ => String::new(),
+    };
+    let mut meta_parts = vec![format!("{date_label} {}", local.format("%a, %b %d %Y"))];
+    if !dimensions.is_empty() {
+        meta_parts.push(dimensions.clone());
+    }
+    meta_parts.push(fmt_size(m.size));
+    meta_parts.push(fmt_views(views));
+    let og_description = if m.description.trim().is_empty() {
+        format!("{} on {}", m.title, settings.site_title)
+    } else {
+        m.description.chars().take(300).collect()
+    };
+    let og_mime = mime_guess::from_ext(&m.extension)
+        .first()
+        .map(|x| x.essence_str().to_string())
+        .unwrap_or_else(|| "image/png".into());
+    let page = ImagePage {
+        title: format!("{} - {}", m.title, settings.site_title),
+        site_title: settings.site_title.clone(),
+        asset_v: asset_v(),
+        rail: "images",
+        search_action: "/images",
+        q: String::new(),
+        is_image: true,
+        page_url: format!("{base}{}", page_path(&m)),
+        og_image: format!("{base}{original_path}"),
+        og_mime,
+        og_description,
+        download_url: format!("{original_path}?download=1"),
+        original_url: original_path,
+        meta_line: meta_parts.join(" \u{b7} "),
+        dimensions,
+        format: format_label(&m.extension),
+        file_name: std::path::Path::new(&m.path)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        size: fmt_size(m.size),
+        date_label,
+        date_full: format!(
+            "{} ({})",
+            local.format("%Y-%m-%d %H:%M"),
+            fmt_relative(when(&m), now)
+        ),
+        views,
+        tags: tags.iter().map(|t| TagView::new(t, "")).collect(),
+        share_url: format!("{base}{}", page_path(&m)),
+        signed_in: admin.is_some(),
+        admin_csrf: admin.map(|s| s.csrf),
+        is_scan: m.source == crate::media::kind::Source::Scan,
+        tags_csv: tags
+            .iter()
+            .map(|t| t.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", "),
+        duration: String::new(),
+        resolution: String::new(),
+        bitrate: String::new(),
+        renditions: String::new(),
         media: m,
     };
     let mut resp = render(&page)?.into_response();

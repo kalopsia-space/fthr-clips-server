@@ -5,13 +5,13 @@
 {% block content %}
 <div class="pagehead">
   <h1>{{ heading }}</h1>
-  <div class="count">{{ count_clips }} clip{% if count_clips != 1 %}s{% endif %} · {{ count_images }} image{% if count_images != 1 %}s{% endif %}</div>
+  <div class="count">{% if kind_video %}{{ count_clips }} clip{% if count_clips != 1 %}s{% endif %} · {{ count_images }} image{% if count_images != 1 %}s{% endif %}{% else %}{{ count_images }} image{% if count_images != 1 %}s{% endif %}{% endif %}</div>
   <div class="spacer"></div>
   <div class="chips">
     <a class="chip{% if kind_video && tag.is_empty() %} on{% endif %}" href="/{{ keep_q }}">All</a>
     <a class="chip" href="/{{ keep_q }}">Clips</a>
     <a class="chip{% if !kind_video %} on{% endif %}" href="/images{{ keep_q }}">Screenshots</a>
-    {% for t in tags %}<a class="chip{% if t.on %} on{% endif %}" href="/?tag={{ t.name_enc }}">#{{ t.name }}</a>
+    {% for t in tags %}<a class="chip{% if t.on %} on{% endif %}" href="{{ tag_path }}?tag={{ t.name_enc }}">#{{ t.name }}</a>
     {% endfor %}
   </div>
   <form class="sortform" action="{{ search_action }}" method="get">

@@ -328,3 +328,10 @@ input[type=color] { width: 36px; height: 28px; padding: 0; border: 1px solid var
 .notice { max-width: 640px; padding: 8px 12px; border-radius: 6px; font-size: 13px; margin: 0 0 14px; border: 1px solid var(--border); }
 .notice.ok { color: var(--accent); border-color: var(--accent); }
 .notice.err { color: var(--error); border-color: rgba(255, 121, 93, .4); }
+
+/* Image view */
+.stage.image { display: flex; justify-content: center; padding: 8px; }
+.stage.image img.shot { width: auto; max-width: min(100%, 1200px); cursor: zoom-in; }
+.lightbox { position: fixed; inset: 0; z-index: 100; background: rgba(0, 0, 0, 0.92); display: flex; align-items: center; justify-content: center; cursor: zoom-out; }
+.lightbox[hidden] { display: none; }
+.lightbox img { max-width: 96vw; max-height: 96vh; object-fit: contain; }

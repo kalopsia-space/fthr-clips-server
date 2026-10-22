@@ -234,7 +234,6 @@ pub fn poster_path(m: &Media) -> String {
     match m.kind {
         MediaKind::Video if m.has_poster => media_url(m, "poster.jpg"),
         MediaKind::Image if m.has_thumb => media_url(m, "thumb.jpg"),
-        MediaKind::Image => media_url(m, &format!("original.{}", m.extension)),
         _ => PLACEHOLDER_URL.to_string(),
     }
 }
@@ -273,6 +272,7 @@ pub struct LibraryPage {
     pub rail: &'static str,
     pub search_action: &'static str,
     pub kind_video: bool,
+    pub tag_path: &'static str,
     pub sections: Vec<DateSection>,
     pub count_clips: i64,
     pub count_images: i64,
@@ -298,7 +298,7 @@ fn card(item: &MediaWithViews, base: &str, now: DateTime<Utc>) -> CardView {
         poster_url: poster_path(m),
         preview_url: (m.has_preview && !is_image).then(|| media_url(m, "preview.mp4")),
         res: if is_image {
-            m.extension.to_uppercase()
+            crate::web::clip::format_label(&m.extension)
         } else {
             fmt_resolution(m)
         },
@@ -406,6 +406,7 @@ async fn library_page(
         rail: if is_video { "clips" } else { "images" },
         search_action: path,
         kind_video: is_video,
+        tag_path: path,
         sections: sections(&listing.rows, by_date, &base),
         count_clips: media::count(&state.db, Some(MediaKind::Video), true).await?,
         count_images: media::count(&state.db, Some(MediaKind::Image), true).await?,

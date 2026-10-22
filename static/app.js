@@ -140,4 +140,20 @@
       });
     }
   }
+
+  // Image lightbox: click the picture to see it full screen; Esc or click closes.
+  var box = document.querySelector(".lightbox");
+  var shot = document.querySelector("img[data-lightbox]");
+  if (box && shot) {
+    var boxImg = box.querySelector("img");
+    var closeBox = function () { box.hidden = true; };
+    shot.addEventListener("click", function () {
+      boxImg.src = shot.getAttribute("data-lightbox");
+      box.hidden = false;
+    });
+    box.addEventListener("click", closeBox);
+    document.addEventListener("keydown", function (ev) {
+      if (ev.key === "Escape" && !box.hidden) { closeBox(); }
+    });
+  }
 })();

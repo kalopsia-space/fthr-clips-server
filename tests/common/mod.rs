@@ -102,6 +102,20 @@ pub fn tiny_png() -> Vec<u8> {
     v
 }
 
+/// A real, decodable PNG of the given size.
+pub fn real_png_sized(w: u32, h: u32) -> Vec<u8> {
+    let img = image::RgbImage::from_fn(w, h, |x, y| {
+        image::Rgb([(x % 256) as u8, (y % 256) as u8, 7])
+    });
+    let mut out = std::io::Cursor::new(Vec::new());
+    img.write_to(&mut out, image::ImageFormat::Png).unwrap();
+    out.into_inner()
+}
+
+pub fn real_png() -> Vec<u8> {
+    real_png_sized(1600, 900)
+}
+
 /// Logs in with the given password; returns a cookie-keeping client and the CSRF token.
 pub async fn login(server: &TestServer, password: &str) -> (reqwest::Client, String) {
     let c = server.client_with_cookies();
