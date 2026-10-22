@@ -15,6 +15,7 @@ use crate::db::media::{self, Media};
 use crate::media::kind::MediaKind;
 use crate::media::playable::is_browser_playable;
 use crate::settings::public_base;
+use crate::web::admin::OptionalAdmin;
 use crate::web::assets::asset_v;
 use crate::web::library::{
     fmt_duration, fmt_relative, fmt_resolution, fmt_size, fmt_views, media_url, page_path, render,
@@ -140,22 +141,42 @@ fn parse_start(map: &HashMap<String, String>) -> String {
 pub async fn video_page(
     state: State<AppState>,
     peer: ConnectInfo<SocketAddr>,
+    admin: OptionalAdmin,
     headers: HeaderMap,
     slug: Path<String>,
     map: Query<HashMap<String, String>>,
 ) -> Result<Response, PageError> {
-    clip_page(state.0, peer.0, headers, slug.0, map.0, MediaKind::Video).await
+    clip_page(
+        state.0,
+        peer.0,
+        headers,
+        slug.0,
+        map.0,
+        MediaKind::Video,
+        admin.0,
+    )
+    .await
 }
 
 /// `GET /i/{slug}`.
 pub async fn image_page(
     state: State<AppState>,
     peer: ConnectInfo<SocketAddr>,
+    admin: OptionalAdmin,
     headers: HeaderMap,
     slug: Path<String>,
     map: Query<HashMap<String, String>>,
 ) -> Result<Response, PageError> {
-    clip_page(state.0, peer.0, headers, slug.0, map.0, MediaKind::Image).await
+    clip_page(
+        state.0,
+        peer.0,
+        headers,
+        slug.0,
+        map.0,
+        MediaKind::Image,
+        admin.0,
+    )
+    .await
 }
 
 async fn clip_page(
@@ -165,6 +186,7 @@ async fn clip_page(
     slug: String,
     map: HashMap<String, String>,
     kind: MediaKind,
+    admin: Option<crate::db::sessions::Session>,
 ) -> Result<Response, PageError> {
     let Some(m) = media::get_by_slug(&state.db, &slug).await? else {
         return Ok(StatusCode::NOT_FOUND.into_response());
@@ -265,9 +287,8 @@ async fn clip_page(
         views,
         tags: tags.iter().map(|t| TagView::new(t, "")).collect(),
         share_url: format!("{base}{}", page_path(&m)),
-        // Task 9 wires the admin session extractor in.
-        signed_in: false,
-        admin_csrf: None,
+        signed_in: admin.is_some(),
+        admin_csrf: admin.map(|s| s.csrf),
         csrf: None,
         sources,
         base,

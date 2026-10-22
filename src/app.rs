@@ -45,6 +45,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/w/{slug}", get(web::clip::video_page))
         .route("/i/{slug}", get(web::clip::image_page))
         .route("/static/{*path}", get(web::assets::serve_static))
+        .merge(web::admin::routes())
         .merge(web::upload_routes(state.config.max_upload_bytes))
         // Later tasks must add routes and fallbacks ABOVE this line: `layer`
         // only wraps what is registered before it.

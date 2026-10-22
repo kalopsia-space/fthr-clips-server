@@ -19,7 +19,7 @@
     <svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ asset_v }}#i-search"/></svg>
     <input type="search" name="q" value="{{ q }}" placeholder="Search clips, tags" aria-label="Search">
   </form>
-  {% if signed_in %}<a class="tb-btn" href="/admin">Admin</a>{% else %}<a class="tb-btn" href="/admin/login">Sign in</a>{% endif %}
+  {% if signed_in %}<form class="inline" method="post" action="/admin/logout">{% if let Some(token) = admin_csrf %}<input type="hidden" name="csrf" value="{{ token }}">{% endif %}<button class="tb-btn" type="submit">admin ▾ · Sign out</button></form>{% else %}<a class="tb-btn" href="/admin/login">Sign in</a>{% endif %}
 </header>
 {% include "partials/rail.html" %}
 <main class="main">
