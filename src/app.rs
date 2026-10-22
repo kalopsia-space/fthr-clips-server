@@ -95,6 +95,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/", get(web::library::videos))
         .route("/images", get(web::library::images))
         .route("/api/library", get(web::library::api_library))
+        .route("/feed.rss", get(web::feed::feed))
         .route("/w/{slug}", get(web::clip::video_page))
         .route("/i/{slug}", get(web::clip::image_page))
         .route("/static/{*path}", get(web::assets::serve_static))
