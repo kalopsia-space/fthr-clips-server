@@ -52,6 +52,8 @@ pub struct NewMedia {
     pub title: String,
     pub public: bool,
     pub recorded_at: Option<DateTime<Utc>>,
+    /// `None` means now.
+    pub created_at: Option<DateTime<Utc>>,
 }
 
 impl NewMedia {
@@ -75,6 +77,7 @@ impl NewMedia {
             title: part(p.file_stem()),
             public: false,
             recorded_at: None,
+            created_at: None,
         }
     }
 }
@@ -124,6 +127,7 @@ pub struct MediaWithViews {
 
 pub async fn insert(db: &Db, m: &NewMedia) -> Result<()> {
     let now = Utc::now();
+    let created = m.created_at.unwrap_or(now);
     sqlx::query(
         "INSERT INTO media (id, slug, kind, path, source, folder, extension, size, title, \
          public, created_at, updated_at, recorded_at) \
@@ -139,7 +143,7 @@ pub async fn insert(db: &Db, m: &NewMedia) -> Result<()> {
     .bind(m.size)
     .bind(&m.title)
     .bind(m.public)
-    .bind(now)
+    .bind(created)
     .bind(now)
     .bind(m.recorded_at)
     .execute(&db.0)
@@ -476,4 +480,26 @@ pub async fn release_webhook(db: &Db, id: &str) -> Result<()> {
         .execute(&db.0)
         .await?;
     Ok(())
+}
+
+pub async fn insert_legacy(db: &Db, old_id: &str, media_id: &str) -> Result<()> {
+    sqlx::query("INSERT OR IGNORE INTO legacy_id (old_id, media_id) VALUES (?, ?)")
+        .bind(old_id)
+        .bind(media_id)
+        .execute(&db.0)
+        .await?;
+    Ok(())
+}
+
+pub async fn legacy_lookup(db: &Db, old_id: &str) -> Result<Option<String>> {
+    Ok(
+        sqlx::query_scalar("SELECT media_id FROM legacy_id WHERE old_id = ?")
+            .bind(old_id)
+            .fetch_optional(&db.0)
+            .await?,
+    )
+}
+
+pub async fn legacy_exists(db: &Db, old_id: &str) -> Result<bool> {
+    Ok(legacy_lookup(db, old_id).await?.is_some())
 }

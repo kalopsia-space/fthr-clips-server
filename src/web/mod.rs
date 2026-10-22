@@ -2,6 +2,7 @@ pub mod admin;
 pub mod assets;
 pub mod clip;
 pub mod feed;
+pub mod legacy;
 pub mod library;
 pub mod media_files;
 pub mod security;
