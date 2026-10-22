@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block head %}<meta property="og:title" content="{{ title }}">
+<meta property="og:type" content="website">
+{% endblock %}
+{% block content %}
+<div class="pagehead">
+  <h1>{{ heading }}</h1>
+  <div class="count">{% if kind_video %}{{ count_clips }} clip{% if count_clips != 1 %}s{% endif %} · {{ count_images }} image{% if count_images != 1 %}s{% endif %}{% else %}{{ count_images }} image{% if count_images != 1 %}s{% endif %}{% endif %}</div>
+  <div class="spacer"></div>
+  <div class="chips">
+    <a class="chip{% if kind_video && tag.is_empty() %} on{% endif %}" href="/{{ keep_q }}">All</a>
+    <a class="chip" href="/{{ keep_q }}">Clips</a>
+    <a class="chip{% if !kind_video %} on{% endif %}" href="/images{{ keep_q }}">Screenshots</a>
+    {% for t in tags %}<a class="chip{% if t.on %} on{% endif %}" href="{{ tag_path }}?tag={{ t.name_enc }}">#{{ t.name }}</a>
+    {% endfor %}
+  </div>
+  <form class="sortform" action="{{ search_action }}" method="get">
+    {% if !q.is_empty() %}<input type="hidden" name="q" value="{{ q }}">{% endif %}
+    {% if !tag.is_empty() %}<input type="hidden" name="tag" value="{{ tag }}">{% endif %}
+    <select name="sort" data-autosubmit aria-label="Sort">
+      {% for opt in sort_options %}<option value="{{ opt.value }}"{% if opt.selected %} selected{% endif %}>{{ opt.label }}</option>
+      {% endfor %}
+    </select>
+    <noscript><button class="btn" type="submit">Apply</button></noscript>
+  </form>
+</div>
+{% if sections.is_empty() %}
+<p class="empty">Nothing here yet.</p>
+{% endif %}
+{% for section in sections %}
+{% if !section.label.is_empty() %}<div class="section-h"><h2>{{ section.label }}</h2><span>{{ section.items.len() }} item{% if section.items.len() != 1 %}s{% endif %}</span></div>{% endif %}
+<div class="grid">
+{% for item in section.items %}{% include "partials/card.html" %}{% endfor %}
+</div>
+{% endfor %}
+{% if pages > 1 %}
+<div class="pager">
+  {% if page > 1 %}<a class="chip" href="{{ prev_href }}">Previous</a>{% endif %}
+  <span>Page {{ page }} of {{ pages }}</span>
+  {% if page < pages %}<a class="chip" href="{{ next_href }}">Next</a>{% endif %}
+</div>
+{% endif %}
+{% endblock %}

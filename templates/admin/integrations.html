@@ -1,0 +1,12 @@
+{% extends "admin/base.html" %}
+{% block admin_body %}
+{% if saved %}<p class="notice ok" role="status">Saved</p>{% endif %}
+{% if !error.is_empty() %}<p class="notice err" role="alert">{{ error }}</p>{% endif %}
+<form class="set-form" method="post" action="/admin/integrations">
+  <input type="hidden" name="csrf" value="{{ admin_csrf.as_deref().unwrap_or("") }}">
+  <label class="set-row"><span class="set-label">Discord webhook URL</span><input type="text" name="discord_webhook_url" value="{{ s.discord_webhook_url }}"></label>
+  <label class="set-row"><span class="set-label">Generic webhook URL</span><input type="text" name="webhook_url" value="{{ s.webhook_url }}"></label>
+  <label class="set-row check"><input type="checkbox" name="webhooks_enabled" value="1"{% if s.webhooks_enabled %} checked{% endif %}><span>Send webhooks for new uploads</span></label>
+  <div class="set-actions"><button class="btn primary" type="submit">Save</button></div>
+</form>
+{% endblock %}

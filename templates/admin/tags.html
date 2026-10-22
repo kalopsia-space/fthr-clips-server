@@ -1,0 +1,34 @@
+{% extends "admin/base.html" %}
+{% block admin_body %}
+<form class="tag-new" id="tag-new">
+  <input type="text" id="tag-new-name" maxlength="40" placeholder="New tag name" aria-label="New tag name" required>
+  <input type="color" id="tag-new-colour" value="{{ default_colour }}" aria-label="Colour">
+  <button class="btn primary" type="submit">Create</button>
+</form>
+{% if tags.is_empty() %}
+<p class="empty">No tags yet.</p>
+{% else %}
+<table class="adm-table" id="tags">
+  <thead><tr><th class="c-sel"></th><th>Name</th><th>Colour</th><th>Media</th><th></th></tr></thead>
+  <tbody>
+  {% for t in tags %}
+  <tr data-tag-id="{{ t.id }}" data-name="{{ t.name }}">
+    <td class="c-sel"><span class="swatch" data-colour="{{ t.colour }}"></span></td>
+    <td><button type="button" class="tag-name" title="Click to rename">{{ t.name }}</button></td>
+    <td><input type="color" class="tag-colour" value="{{ t.colour }}" aria-label="Colour for {{ t.name }}"></td>
+    <td>{{ t.count }}</td>
+    <td class="c-act"><button type="button" class="btn ghost tag-del">Delete</button></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+<dialog id="tag-dialog" class="dlg" aria-labelledby="tag-dialog-title">
+  <h2 id="tag-dialog-title">Delete tag</h2>
+  <p id="tag-dialog-text"></p>
+  <div class="dlg-actions">
+    <button class="btn ghost" type="button" id="tag-dialog-cancel">Cancel</button>
+    <button class="btn danger" type="button" id="tag-dialog-confirm">Delete</button>
+  </div>
+</dialog>
+{% endblock %}

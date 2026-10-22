@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in</title>
+<link rel="icon" type="image/png" href="/static/logo.png?v={{ asset_v }}">
+<link rel="stylesheet" href="/static/app.css?v={{ asset_v }}">
+</head>
+<body class="login-body">
+<main class="login-card">
+  <h1>Admin sign in</h1>
+  <form method="post" action="/admin/login">
+    {% if let Some(n) = next %}<input type="hidden" name="next" value="{{ n }}">{% endif %}
+    <label for="password" class="sr">Password</label>
+    <input id="password" class="login-input" type="password" name="password" placeholder="Password" autocomplete="current-password" autofocus required>
+    {% if error %}<p class="login-error" role="alert">Wrong password.</p>{% endif %}
+    <button class="login-btn" type="submit">Sign in</button>
+  </form>
+</main>
+</body>
+</html>
