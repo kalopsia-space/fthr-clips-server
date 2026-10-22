@@ -35,6 +35,8 @@ impl AppState {
 pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(web::healthz))
+        // Later tasks must add routes and fallbacks ABOVE this line: `layer`
+        // only wraps what is registered before it.
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             security_headers,
