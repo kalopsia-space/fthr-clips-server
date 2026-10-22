@@ -1,7 +1,19 @@
 <section class="sect">
   <h2 class="hd">Details</h2>
   <div class="bd">
+    {% if signed_in %}
+    <form class="edit" id="details-form">
+      <label for="ed-title">Title</label>
+      <input type="text" id="ed-title" maxlength="200" value="{{ media.title }}" required>
+      <label for="ed-desc">Description</label>
+      <textarea id="ed-desc" rows="4">{{ media.description }}</textarea>
+      <label for="ed-tags">Tags (comma separated)</label>
+      <input type="text" id="ed-tags" value="{{ tags_csv }}">
+      <button class="btn primary" type="submit">Save</button>
+    </form>
+    {% else %}
     <div class="kv"><b>Title</b><span>{{ media.title }}</span></div>
+    {% endif %}
     {% if !is_image %}<div class="kv"><b>Duration</b><span>{{ duration }}</span></div>{% endif %}
     {% if !resolution.is_empty() %}<div class="kv"><b>Resolution</b><span>{{ resolution }}</span></div>{% endif %}
     <div class="kv"><b>Views</b><span>{{ views }}</span></div>

@@ -3,12 +3,13 @@
 pub mod api_media;
 pub mod api_tags;
 pub mod auth;
+pub mod pages;
 
 use axum::extract::FromRequestParts;
 use axum::http::header::{COOKIE, LOCATION};
 use axum::http::request::Parts;
 use axum::http::{HeaderMap, StatusCode};
-use axum::response::{Html, IntoResponse, Response};
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, patch, post};
 use axum::{Json, Router};
 use serde_json::json;
@@ -21,7 +22,9 @@ pub const COOKIE_NAME: &str = "fthr_admin";
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/admin", get(dashboard))
+        .route("/admin", get(pages::root))
+        .route("/admin/files", get(pages::files))
+        .route("/admin/tags", get(pages::tags))
         .route(
             "/admin/login",
             get(auth::login_page).post(auth::login_submit),
@@ -44,11 +47,6 @@ pub fn routes() -> Router<AppState> {
             "/admin/api/tags/{id}",
             patch(api_tags::patch).delete(api_tags::delete),
         )
-}
-
-/// Placeholder dashboard; replaced by the real admin UI later.
-async fn dashboard(AdminSession(_): AdminSession) -> Html<&'static str> {
-    Html("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>Admin</title></head><body><h1>Admin</h1></body></html>")
 }
 
 /// Value of the `fthr_admin` cookie, if present.

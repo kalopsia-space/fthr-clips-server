@@ -127,7 +127,8 @@ pub struct ClipPage {
     pub share_url: String,
     pub signed_in: bool,
     pub admin_csrf: Option<String>,
-    pub csrf: Option<String>,
+    pub is_scan: bool,
+    pub tags_csv: String,
 }
 
 fn parse_start(map: &HashMap<String, String>) -> String {
@@ -289,7 +290,12 @@ async fn clip_page(
         share_url: format!("{base}{}", page_path(&m)),
         signed_in: admin.is_some(),
         admin_csrf: admin.map(|s| s.csrf),
-        csrf: None,
+        is_scan: m.source == crate::media::kind::Source::Scan,
+        tags_csv: tags
+            .iter()
+            .map(|t| t.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", "),
         sources,
         base,
         media: m,

@@ -104,3 +104,21 @@ pub async fn attach_by_name(db: &Db, media_ids: &[String], name: &str) -> Result
     tx.commit().await?;
     Ok(tag)
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, FromRow, Serialize)]
+pub struct TagWithCount {
+    pub id: i64,
+    pub name: String,
+    pub colour: String,
+    pub count: i64,
+}
+
+/// Every tag with the number of media items carrying it.
+pub async fn list_with_counts(db: &Db) -> Result<Vec<TagWithCount>> {
+    Ok(sqlx::query_as(
+        "SELECT t.id, t.name, t.colour, COUNT(mt.media_id) AS count FROM tag t \
+         LEFT JOIN media_tag mt ON mt.tag_id = t.id GROUP BY t.id ORDER BY t.name",
+    )
+    .fetch_all(&db.0)
+    .await?)
+}
