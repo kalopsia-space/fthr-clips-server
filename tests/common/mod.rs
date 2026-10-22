@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use fthr_clips_server::app::{build_router, AppState};
 use fthr_clips_server::config::Config;
+use fthr_clips_server::db::Db;
 
 pub struct TestServer {
     pub base: String,
@@ -25,8 +26,10 @@ impl TestServer {
             );
         }
         let config = Config::from_env_map(&vars, None).unwrap();
+        let db = Db::open(&config.data_dir.join("library.db")).await.unwrap();
         let state = AppState {
             config: Arc::new(config),
+            db,
         };
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
