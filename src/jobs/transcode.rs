@@ -10,7 +10,7 @@ use anyhow::{anyhow, bail};
 use tokio_util::sync::CancellationToken;
 
 use super::{worker, TRANSCODE_LADDER};
-use crate::app::AppState;
+use crate::app::{AppState, EncoderState};
 use crate::config::TranscodeMode;
 use crate::db::jobs::{self, Job, Rendition};
 use crate::db::media;
@@ -79,16 +79,15 @@ pub async fn queue_rendition(state: &AppState, media_id: &str, height: u32) -> a
 }
 
 async fn encoder(state: &AppState) -> anyhow::Result<encoders::Encoder> {
-    if let Some(e) = *state.encoder.read().await {
-        return Ok(e);
+    // Detection runs at startup; wait a while before burning a retry attempt.
+    for _ in 0..120 {
+        match *state.encoder.read().await {
+            EncoderState::Detected(e) => return Ok(e),
+            EncoderState::Unavailable => bail!("no working encoder"),
+            EncoderState::Pending => tokio::time::sleep(Duration::from_millis(500)).await,
+        }
     }
-    // Startup detection may not have finished (or tests never ran it).
-    let found = encoders::detect(&state.ffmpeg, state.settings.get().encoder).await;
-    let mut slot = state.encoder.write().await;
-    if slot.is_none() {
-        *slot = found;
-    }
-    (*slot).ok_or_else(|| anyhow!("no working video encoder found"))
+    bail!("encoder not detected yet")
 }
 
 fn height_of(kind: &str) -> anyhow::Result<u32> {
@@ -141,7 +140,8 @@ pub async fn transcode(
         }
         Err(e) => {
             let _ = tokio::fs::remove_file(&tmp).await;
-            if !cancel.is_cancelled() {
+            let pending = matches!(*state.encoder.read().await, EncoderState::Pending);
+            if !cancel.is_cancelled() && !pending {
                 let msg = format!("{e:#}");
                 let tail: String = msg.chars().take(500).collect();
                 if let Err(db) = jobs::rendition_fail(&state.db, &m.id, hi, &tail).await {

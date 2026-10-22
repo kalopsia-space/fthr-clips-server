@@ -15,6 +15,24 @@ use crate::settings::SettingsStore;
 use crate::web;
 use crate::web::security::{security_headers, RateLimiter};
 
+/// Whether encoder detection has run: `Pending` means not finished yet,
+/// `Unavailable` means it finished and nothing works.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EncoderState {
+    Pending,
+    Detected(Encoder),
+    Unavailable,
+}
+
+impl EncoderState {
+    pub fn name(&self) -> Option<&'static str> {
+        match self {
+            EncoderState::Detected(e) => Some(e.name()),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub config: Arc<Config>,
@@ -23,8 +41,8 @@ pub struct AppState {
     pub login_limiter: Arc<RateLimiter>,
     pub upload_limiter: Arc<RateLimiter>,
     pub ffmpeg: Arc<Ffmpeg>,
-    /// Filled in the background after startup; `None` until detected or when unavailable.
-    pub encoder: Arc<tokio::sync::RwLock<Option<Encoder>>>,
+    /// Result of background encoder detection (see [`EncoderState`]).
+    pub encoder: Arc<tokio::sync::RwLock<EncoderState>>,
     pub events: EventBus,
     /// Cancellation tokens of running jobs, keyed by job id.
     pub running: Arc<Mutex<HashMap<i64, CancellationToken>>>,
@@ -35,6 +53,20 @@ pub struct AppState {
 }
 
 impl AppState {
+    /// Detect the encoder in the background; the state is `Pending` meanwhile.
+    pub fn spawn_encoder_detection(&self, choice: crate::config::EncoderChoice) {
+        let (ffmpeg, slot) = (self.ffmpeg.clone(), self.encoder.clone());
+        tokio::spawn(async move {
+            *slot.write().await = EncoderState::Pending;
+            let found = encoders::detect(&ffmpeg, choice).await;
+            match found {
+                Some(e) => tracing::info!("video encoder: {}", e.name()),
+                None => tracing::info!("no working video encoder found"),
+            }
+            *slot.write().await = found.map_or(EncoderState::Unavailable, EncoderState::Detected);
+        });
+    }
+
     pub fn new(config: Config, db: Db, settings: Arc<SettingsStore>) -> Self {
         let ffmpeg = Arc::new(Ffmpeg::locate(&config));
         Self {
@@ -44,7 +76,7 @@ impl AppState {
             login_limiter: Arc::new(RateLimiter::new(10, Duration::from_secs(60))),
             upload_limiter: Arc::new(RateLimiter::new(30, Duration::from_secs(60))),
             ffmpeg,
-            encoder: Arc::new(tokio::sync::RwLock::new(None)),
+            encoder: Arc::new(tokio::sync::RwLock::new(EncoderState::Pending)),
             events: new_event_bus(),
             running: Arc::new(Mutex::new(HashMap::new())),
             last_scan: Arc::new(tokio::sync::RwLock::new(None)),
@@ -90,18 +122,7 @@ pub async fn serve(config: Config) -> anyhow::Result<()> {
         Some(v) => tracing::info!("ffmpeg {v}"),
         None => tracing::warn!("ffmpeg not found: previews and transcoding are disabled"),
     }
-    {
-        let (ffmpeg, slot) = (state.ffmpeg.clone(), state.encoder.clone());
-        let choice = state.settings.get().encoder;
-        tokio::spawn(async move {
-            let found = encoders::detect(&ffmpeg, choice).await;
-            match found {
-                Some(e) => tracing::info!("video encoder: {}", e.name()),
-                None => tracing::info!("no working video encoder found"),
-            }
-            *slot.write().await = found;
-        });
-    }
+    state.spawn_encoder_detection(state.settings.get().encoder);
     crate::jobs::spawn_pools(&state).await;
     crate::media::scan::spawn_background(&state);
     axum::serve(

@@ -247,6 +247,22 @@ async fn bulk_add_tag_and_link_only() {
     assert_eq!(one["public"], false);
     let j = bulk(json!({"action": "remove_renditions", "ids": [a]})).await;
     assert_eq!(j["ok"], 1);
+    let bad = c
+        .post(s.url("/admin/api/media/bulk"))
+        .header(H, &csrf)
+        .json(&json!({"action": "nonsense", "ids": [a]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(bad.status(), 400);
+    let img = s.upload("pic.png", common::tiny_png(), Some("t")).await;
+    let img_id = img.json::<Value>().await.unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let j = bulk(json!({"action": "transcode", "ids": [img_id]})).await;
+    assert_eq!(j["ok"], 0);
+    assert_eq!(j["failed"][0]["error"], "only videos can be transcoded");
 }
 
 #[tokio::test]

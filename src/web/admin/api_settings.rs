@@ -16,16 +16,12 @@ const LADDER_RUNGS: [u64; 3] = [480, 720, 1080];
 
 /// Name of the detected encoder, if any.
 pub async fn effective_encoder(state: &AppState) -> Option<&'static str> {
-    state.encoder.read().await.map(|e| e.name())
+    state.encoder.read().await.name()
 }
 
 /// Detect the encoder again in the background after the choice changed.
 pub fn redetect(state: &AppState, choice: crate::config::EncoderChoice) {
-    let (ffmpeg, slot) = (state.ffmpeg.clone(), state.encoder.clone());
-    tokio::spawn(async move {
-        let found = crate::ffmpeg::encoders::detect(&ffmpeg, choice).await;
-        *slot.write().await = found;
-    });
+    state.spawn_encoder_detection(choice);
 }
 
 /// The settings plus the effective encoder (null until detected).

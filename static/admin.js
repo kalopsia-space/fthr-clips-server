@@ -395,7 +395,10 @@
     $$("[data-transcode]", panel).forEach(function (btn) {
       btn.addEventListener("click", function () {
         var h = parseInt(btn.getAttribute("data-transcode"), 10);
-        api("POST", mediaUrl + "/transcode", { heights: [h] }).then(reload, fail);
+        api("POST", mediaUrl + "/transcode", { heights: [h] }).then(function (res) {
+          if (res && res.skipped && res.skipped.length) { toast("Skipped " + res.skipped.join(", ") + "p: taller than the source"); return; }
+          reload();
+        }, fail);
       });
     });
     $$("[data-remove-rendition]", panel).forEach(function (btn) {
