@@ -196,6 +196,39 @@ pub async fn relink(db: &Db, id: &str, new_path: &str) -> Result<()> {
     Ok(())
 }
 
+/// Point a media row at a moved file: new path and relative folder.
+pub async fn relocate(db: &Db, id: &str, new_path: &str, folder: &str) -> Result<()> {
+    sqlx::query(
+        "UPDATE media SET path = ?, folder = ?, available = 1, updated_at = ? WHERE id = ?",
+    )
+    .bind(new_path)
+    .bind(folder)
+    .bind(Utc::now())
+    .bind(id)
+    .execute(&db.0)
+    .await?;
+    Ok(())
+}
+
+/// Remember a removed row's path so the scanner does not re-add the file.
+pub async fn add_tombstone(db: &Db, id: &str, path: &str) -> Result<()> {
+    sqlx::query("INSERT OR REPLACE INTO tombstone (id, path) VALUES (?, ?)")
+        .bind(id)
+        .bind(path)
+        .execute(&db.0)
+        .await?;
+    Ok(())
+}
+
+pub async fn view_count(db: &Db, id: &str) -> Result<i64> {
+    Ok(
+        sqlx::query_scalar("SELECT COUNT(*) FROM view WHERE media_id = ?")
+            .bind(id)
+            .fetch_one(&db.0)
+            .await?,
+    )
+}
+
 pub async fn update_details(db: &Db, id: &str, title: &str, description: &str) -> Result<()> {
     sqlx::query("UPDATE media SET title = ?, description = ?, updated_at = ? WHERE id = ?")
         .bind(title)

@@ -99,3 +99,20 @@ pub fn tiny_png() -> Vec<u8> {
     v[..head.len()].copy_from_slice(head);
     v
 }
+
+/// Logs in with the given password; returns a cookie-keeping client and the CSRF token.
+pub async fn login(server: &TestServer, password: &str) -> (reqwest::Client, String) {
+    let c = server.client_with_cookies();
+    let r = c
+        .post(server.url("/admin/login"))
+        .json(&serde_json::json!({ "password": password }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let csrf = r.json::<serde_json::Value>().await.unwrap()["csrf"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    (c, csrf)
+}
