@@ -20,7 +20,7 @@ Upload from the FTHR Clips desktop app, get a link that unfurls in Discord, and 
 
 </div>
 
-> Built by an FTHR maintainer as a side project. Not an official FTHR Community release.
+> Built by FTHR's Linux branch maintainer as a side project. Not an official FTHR Community release.
 
 ---
 
