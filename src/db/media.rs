@@ -412,3 +412,24 @@ pub async fn all_ids(db: &Db) -> Result<Vec<String>> {
         .fetch_all(&db.0)
         .await?)
 }
+
+pub async fn set_recorded_at(db: &Db, id: &str, at: DateTime<Utc>) -> Result<()> {
+    sqlx::query("UPDATE media SET recorded_at = ?, updated_at = ? WHERE id = ?")
+        .bind(at)
+        .bind(Utc::now())
+        .bind(id)
+        .execute(&db.0)
+        .await?;
+    Ok(())
+}
+
+pub async fn set_dimensions(db: &Db, id: &str, width: i64, height: i64) -> Result<()> {
+    sqlx::query("UPDATE media SET width = ?, height = ?, updated_at = ? WHERE id = ?")
+        .bind(width)
+        .bind(height)
+        .bind(Utc::now())
+        .bind(id)
+        .execute(&db.0)
+        .await?;
+    Ok(())
+}

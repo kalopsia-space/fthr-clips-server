@@ -1,13 +1,16 @@
+use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::Context;
 use axum::{routing::get, Router};
+use tokio_util::sync::CancellationToken;
 
 use crate::config::Config;
 use crate::db::Db;
 use crate::ffmpeg::{encoders, encoders::Encoder, Ffmpeg};
+use crate::jobs::{new_event_bus, EventBus, ScanSummary};
 use crate::settings::SettingsStore;
 use crate::web;
 use crate::web::security::{security_headers, RateLimiter};
@@ -22,6 +25,11 @@ pub struct AppState {
     pub ffmpeg: Arc<Ffmpeg>,
     /// Filled in the background after startup; `None` until detected or when unavailable.
     pub encoder: Arc<tokio::sync::RwLock<Option<Encoder>>>,
+    pub events: EventBus,
+    /// Cancellation tokens of running jobs, keyed by job id.
+    pub running: Arc<Mutex<HashMap<i64, CancellationToken>>>,
+    /// Written by the library scanner; `None` until the first scan.
+    pub last_scan: Arc<tokio::sync::RwLock<Option<ScanSummary>>>,
 }
 
 impl AppState {
@@ -35,6 +43,9 @@ impl AppState {
             upload_limiter: Arc::new(RateLimiter::new(30, Duration::from_secs(60))),
             ffmpeg,
             encoder: Arc::new(tokio::sync::RwLock::new(None)),
+            events: new_event_bus(),
+            running: Arc::new(Mutex::new(HashMap::new())),
+            last_scan: Arc::new(tokio::sync::RwLock::new(None)),
         }
     }
 }
@@ -88,6 +99,7 @@ pub async fn serve(config: Config) -> anyhow::Result<()> {
             *slot.write().await = found;
         });
     }
+    crate::jobs::spawn_pools(&state);
     axum::serve(
         listener,
         build_router(state).into_make_service_with_connect_info::<SocketAddr>(),
