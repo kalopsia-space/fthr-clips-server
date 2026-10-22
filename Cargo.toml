@@ -9,7 +9,7 @@ axum = { version = "0.8", features = ["multipart", "macros"] }
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["compression-gzip", "compression-br", "trace", "timeout", "set-header", "fs"] }
-sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "chrono"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "chrono", "derive", "macros"] }
 askama = "0.14"
 rust-embed = "8"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
