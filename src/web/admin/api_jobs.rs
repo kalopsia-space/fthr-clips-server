@@ -93,6 +93,17 @@ pub async fn cancel(
         if let Some(t) = token {
             t.cancel();
         }
+        if let Some(h) = job
+            .kind
+            .strip_prefix("transcode:")
+            .and_then(|h| h.parse::<u32>().ok())
+        {
+            jobs::rendition_fail(&state.db, &job.media_id, i64::from(h), "cancelled").await?;
+            let tmp = crate::media::paths::DerivedPaths::new(&state.config.data_dir, &job.media_id)
+                .dir()
+                .join(format!("{h}p.tmp.mp4"));
+            let _ = tokio::fs::remove_file(tmp).await;
+        }
         crate::jobs::worker::emit(&state, &job, "cancelled", job.progress, None);
     }
     Ok(Json(json!({ "cancelled": cancellable })))
@@ -142,7 +153,7 @@ pub async fn stats(
         .flatten()
         .map(|(used, total)| json!({ "used": used, "total": total, "path": path }));
     let last_scan = state.last_scan.read().await.clone();
-    let encoder = state.encoder.read().await.map(|e| e.name());
+    let encoder = state.encoder.read().await.name();
     Ok(Json(json!({
         "media": { "videos": videos, "images": images },
         "disk": disk,

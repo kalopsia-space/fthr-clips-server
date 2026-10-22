@@ -136,9 +136,29 @@ async fn compat_mode_transcodes_mkv() {
     );
 }
 
+/// 2 s 640x480 h264 mp4 so the 480 rung is not above the source.
+fn mp4_480(dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    let out = dir.join("big.mp4");
+    let ok = std::process::Command::new("ffmpeg")
+        .args(["-nostdin", "-hide_banner", "-loglevel", "error"])
+        .args([
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=duration=2:size=640x480:rate=30",
+        ])
+        .args(["-c:v", "libx264", "-pix_fmt", "yuv420p", "-y"])
+        .arg(&out)
+        .status()
+        .ok()?
+        .success();
+    ok.then_some(out)
+}
+
 #[tokio::test]
 async fn manual_transcode_and_remove() {
-    let Some(fx) = fixture_mp4() else {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let Some(fx) = mp4_480(tmp.path()) else {
         eprintln!("skipped: ffmpeg not found");
         return;
     };
@@ -182,6 +202,28 @@ async fn manual_transcode_and_remove() {
     );
     let item = admin_item(&s, &c, &id).await;
     assert_eq!(item["renditions"][0]["state"], "ready");
+    // Queuing a ready rung again is a no-op; taller-than-source rungs are skipped.
+    let r: Value = c
+        .post(s.url(&format!("/admin/api/media/{id}/transcode")))
+        .header(H, &csrf)
+        .json(&json!({"heights": [480, 720]}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(r["skipped"], json!([720]));
+    assert_eq!(r["renditions"].as_array().unwrap().len(), 1);
+    assert_eq!(r["renditions"][0]["state"], "ready");
+    let item = admin_item(&s, &c, &id).await;
+    let n = item["jobs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|j| j["kind"] == "transcode:480")
+        .count();
+    assert_eq!(n, 1, "second queue must not enqueue another job");
     let anon = s
         .client
         .get(s.url(&format!("/w/{slug}")))

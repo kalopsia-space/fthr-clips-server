@@ -607,17 +607,41 @@ struct TranscodeBody {
     heights: Vec<u32>,
 }
 
-async fn queue_heights(state: &AppState, m: &Media, heights: &[u32]) -> Result<(), ApiError> {
+/// Queues the rungs that need work and returns the ones skipped for being
+/// taller than the source (never upscale). Rungs already ready, running or
+/// queued are left alone; only missing or failed ones are (re)queued.
+async fn queue_heights(state: &AppState, m: &Media, heights: &[u32]) -> Result<Vec<u32>, ApiError> {
     if m.kind != MediaKind::Video {
         return Err(ApiError::bad("only videos can be transcoded"));
     }
     if !state.ffmpeg.available() {
         return Err(ApiError::bad("ffmpeg not found"));
     }
-    for h in heights {
-        crate::jobs::transcode::queue_rendition(state, &m.id, *h).await?;
+    let mut wanted: Vec<u32> = heights.to_vec();
+    wanted.sort_unstable();
+    wanted.dedup();
+    let source = m.height.filter(|h| *h > 0).map(|h| h as u32);
+    let (mut keep, mut skipped): (Vec<u32>, Vec<u32>) = match source {
+        Some(sh) => wanted.iter().partition(|h| **h <= sh),
+        None => (wanted.clone(), Vec::new()),
+    };
+    // An unplayable source shorter than every rung still needs one (scaled).
+    if keep.is_empty() && !crate::web::clip::original_playable(m) {
+        if let Some(first) = skipped.first().copied() {
+            keep.push(first);
+            skipped.remove(0);
+        }
     }
-    Ok(())
+    let existing = jobs::renditions_for(&state.db, &m.id).await?;
+    for h in keep {
+        let busy = existing.iter().any(|r| {
+            r.height == i64::from(h) && matches!(r.state.as_str(), "ready" | "running" | "queued")
+        });
+        if !busy {
+            crate::jobs::transcode::queue_rendition(state, &m.id, h).await?;
+        }
+    }
+    Ok(skipped)
 }
 
 /// Cancels any active job for the rung, deletes the file and the row.
@@ -654,7 +678,7 @@ pub async fn transcode(
     Path(id): Path<String>,
     headers: HeaderMap,
     body: Bytes,
-) -> Result<Json<AdminItem>, ApiError> {
+) -> Result<Json<serde_json::Value>, ApiError> {
     require_csrf(&session, &headers, None)?;
     let b: TranscodeBody = parse_body(&body)?;
     if b.heights.is_empty() || !b.heights.iter().all(|h| RUNGS.contains(h)) {
@@ -665,8 +689,11 @@ pub async fn transcode(
     let m = media::get(&state.db, &id)
         .await?
         .ok_or_else(ApiError::not_found)?;
-    queue_heights(&state, &m, &b.heights).await?;
-    item_json(&state, &id).await
+    let skipped = queue_heights(&state, &m, &b.heights).await?;
+    let item = item_json(&state, &id).await?.0;
+    let mut v = serde_json::to_value(item).map_err(anyhow::Error::from)?;
+    v["skipped"] = json!(skipped);
+    Ok(Json(v))
 }
 
 /// `DELETE /admin/api/media/{id}/renditions/{h}`.
