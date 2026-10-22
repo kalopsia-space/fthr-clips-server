@@ -7,6 +7,7 @@ use axum::{routing::get, Router};
 
 use crate::config::Config;
 use crate::db::Db;
+use crate::ffmpeg::{encoders, encoders::Encoder, Ffmpeg};
 use crate::settings::SettingsStore;
 use crate::web;
 use crate::web::security::{security_headers, RateLimiter};
@@ -18,16 +19,22 @@ pub struct AppState {
     pub settings: Arc<SettingsStore>,
     pub login_limiter: Arc<RateLimiter>,
     pub upload_limiter: Arc<RateLimiter>,
+    pub ffmpeg: Arc<Ffmpeg>,
+    /// Filled in the background after startup; `None` until detected or when unavailable.
+    pub encoder: Arc<tokio::sync::RwLock<Option<Encoder>>>,
 }
 
 impl AppState {
     pub fn new(config: Config, db: Db, settings: Arc<SettingsStore>) -> Self {
+        let ffmpeg = Arc::new(Ffmpeg::locate(&config));
         Self {
             config: Arc::new(config),
             db,
             settings,
             login_limiter: Arc::new(RateLimiter::new(10, Duration::from_secs(60))),
             upload_limiter: Arc::new(RateLimiter::new(30, Duration::from_secs(60))),
+            ffmpeg,
+            encoder: Arc::new(tokio::sync::RwLock::new(None)),
         }
     }
 }
@@ -65,6 +72,22 @@ pub async fn serve(config: Config) -> anyhow::Result<()> {
         .await
         .with_context(|| format!("binding {addr}"))?;
     tracing::info!("listening on {addr}");
+    match &state.ffmpeg.version {
+        Some(v) => tracing::info!("ffmpeg {v}"),
+        None => tracing::warn!("ffmpeg not found: previews and transcoding are disabled"),
+    }
+    {
+        let (ffmpeg, slot) = (state.ffmpeg.clone(), state.encoder.clone());
+        let choice = state.settings.get().encoder;
+        tokio::spawn(async move {
+            let found = encoders::detect(&ffmpeg, choice).await;
+            match found {
+                Some(e) => tracing::info!("video encoder: {}", e.name()),
+                None => tracing::info!("no working video encoder found"),
+            }
+            *slot.write().await = found;
+        });
+    }
     axum::serve(
         listener,
         build_router(state).into_make_service_with_connect_info::<SocketAddr>(),

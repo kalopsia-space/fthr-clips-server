@@ -116,3 +116,41 @@ pub async fn login(server: &TestServer, password: &str) -> (reqwest::Client, Str
         .to_string();
     (c, csrf)
 }
+
+/// Generates (once) a 2 s 320x240 h264/aac mp4 in the temp dir. `None` when ffmpeg is not on PATH.
+pub fn fixture_mp4() -> Option<std::path::PathBuf> {
+    use std::sync::OnceLock;
+    static FIXTURE: OnceLock<Option<std::path::PathBuf>> = OnceLock::new();
+    FIXTURE
+        .get_or_init(|| {
+            let dir = std::env::temp_dir().join("fthr-clips-fixtures");
+            std::fs::create_dir_all(&dir).ok()?;
+            let final_path = dir.join("tiny.mp4");
+            if final_path.exists() {
+                return Some(final_path);
+            }
+            // Write to a per-process name then rename, so parallel test binaries never see a partial file.
+            let tmp = dir.join(format!("tiny-{}.mp4", std::process::id()));
+            let ok = std::process::Command::new("ffmpeg")
+                .args(["-nostdin", "-hide_banner", "-loglevel", "error"])
+                .args([
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "testsrc=duration=2:size=320x240:rate=30",
+                ])
+                .args(["-f", "lavfi", "-i", "sine=duration=2"])
+                .args(["-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac"])
+                .args(["-shortest", "-y"])
+                .arg(&tmp)
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+            if !ok {
+                return None;
+            }
+            std::fs::rename(&tmp, &final_path).ok()?;
+            Some(final_path)
+        })
+        .clone()
+}
