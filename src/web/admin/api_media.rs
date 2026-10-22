@@ -80,6 +80,7 @@ struct RenditionView {
     height: i64,
     state: String,
     progress: f64,
+    error: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -116,6 +117,7 @@ async fn admin_item(state: &AppState, row: &MediaWithViews) -> anyhow::Result<Ad
             height: r.height,
             state: r.state,
             progress: r.progress,
+            error: r.error,
         })
         .collect();
     let jobs = jobs::list_for_media(&state.db, &m.id)
