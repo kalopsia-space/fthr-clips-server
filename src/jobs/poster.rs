@@ -40,6 +40,15 @@ pub async fn probe(state: &AppState, job: &Job) -> anyhow::Result<()> {
     // Poster and preview need the duration probed above.
     jobs::enqueue(&state.db, &m.id, super::POSTER).await?;
     jobs::enqueue(&state.db, &m.id, super::PREVIEW).await?;
+    // Mode rules decide which renditions this video gets.
+    if let Some(fresh) = media::get(&state.db, &m.id).await? {
+        let settings = state.settings.get();
+        let playable = crate::web::clip::original_playable(&fresh);
+        let height = fresh.height.filter(|h| *h > 0).map(|h| h as u32);
+        for h in super::transcode::plan_for(&settings, playable, height) {
+            super::transcode::queue_rendition(state, &m.id, h).await?;
+        }
+    }
     Ok(())
 }
 

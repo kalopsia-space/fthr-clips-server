@@ -14,17 +14,34 @@ use crate::settings::Settings;
 
 const LADDER_RUNGS: [u64; 3] = [480, 720, 1080];
 
-/// The settings plus the (not yet detected) effective encoder.
-fn view(s: &Settings) -> Value {
+/// Name of the detected encoder, if any.
+pub async fn effective_encoder(state: &AppState) -> Option<&'static str> {
+    state.encoder.read().await.map(|e| e.name())
+}
+
+/// Detect the encoder again in the background after the choice changed.
+pub fn redetect(state: &AppState, choice: crate::config::EncoderChoice) {
+    let (ffmpeg, slot) = (state.ffmpeg.clone(), state.encoder.clone());
+    tokio::spawn(async move {
+        let found = crate::ffmpeg::encoders::detect(&ffmpeg, choice).await;
+        *slot.write().await = found;
+    });
+}
+
+/// The settings plus the effective encoder (null until detected).
+async fn view(state: &AppState, s: &Settings) -> Value {
     let mut v = serde_json::to_value(s).unwrap_or_else(|_| json!({}));
     if let Value::Object(m) = &mut v {
-        m.insert("effective_encoder".into(), Value::Null);
+        m.insert(
+            "effective_encoder".into(),
+            json!(effective_encoder(state).await),
+        );
     }
     v
 }
 
 pub async fn get(AdminSession(_): AdminSession, State(state): State<AppState>) -> Json<Value> {
-    Json(view(&state.settings.get()))
+    Json(view(&state, &state.settings.get()).await)
 }
 
 pub async fn put(
@@ -40,12 +57,16 @@ pub async fn put(
         m.remove("effective_encoder");
     }
     validate(&mut patch).map_err(ApiError::bad)?;
+    let old = state.settings.get().encoder;
     let new = state
         .settings
         .update(&state.db, patch)
         .await
         .map_err(|e| ApiError::bad(format!("{e:#}")))?;
-    Ok(Json(view(&new)))
+    if new.encoder != old {
+        redetect(&state, new.encoder);
+    }
+    Ok(Json(view(&state, &new).await))
 }
 
 fn int_in(m: &Map<String, Value>, key: &str, lo: u64, hi: u64) -> Result<(), String> {

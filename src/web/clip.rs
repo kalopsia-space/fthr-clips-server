@@ -47,7 +47,7 @@ fn normalise_container(raw: &str) -> String {
     }
 }
 
-fn original_playable(m: &Media) -> bool {
+pub fn original_playable(m: &Media) -> bool {
     let container = normalise_container(m.container.as_deref().unwrap_or(&m.extension));
     let v = m.codec_video.as_deref().map(str::to_ascii_lowercase);
     let a = m.codec_audio.as_deref().map(str::to_ascii_lowercase);
@@ -86,6 +86,37 @@ pub fn playback_sources(m: &Media, renditions: &[Rendition]) -> Vec<PlaybackSour
         });
     }
     out
+}
+
+/// One row of the Quality panel.
+#[derive(Debug, Clone)]
+pub struct QualityRow {
+    pub height: u32,
+    /// "none" | "queued" | "running" | "ready" | "failed"
+    pub state: String,
+    pub pct: u32,
+    pub error: String,
+}
+
+fn quality_rows(ladder: &[u32], renditions: &[Rendition], signed_in: bool) -> Vec<QualityRow> {
+    let mut heights: Vec<u32> = renditions.iter().map(|r| r.height as u32).collect();
+    if signed_in {
+        heights.extend(ladder.iter().copied());
+    }
+    heights.sort_unstable_by(|a, b| b.cmp(a));
+    heights.dedup();
+    heights
+        .into_iter()
+        .map(|h| {
+            let r = renditions.iter().find(|r| r.height == i64::from(h));
+            QualityRow {
+                height: h,
+                state: r.map_or("none".into(), |r| r.state.clone()),
+                pct: r.map_or(0, |r| (r.progress.clamp(0.0, 1.0) * 100.0).round() as u32),
+                error: r.and_then(|r| r.error.clone()).unwrap_or_default(),
+            }
+        })
+        .collect()
 }
 
 pub fn og_video(sources: &[PlaybackSource]) -> Option<&PlaybackSource> {
@@ -129,6 +160,7 @@ pub struct ClipPage {
     pub admin_csrf: Option<String>,
     pub is_scan: bool,
     pub tags_csv: String,
+    pub quality: Vec<QualityRow>,
 }
 
 fn parse_start(map: &HashMap<String, String>) -> String {
@@ -211,6 +243,11 @@ async fn clip_page(
     let renditions = jobs::renditions_for(&state.db, &m.id).await?;
     let sources = playback_sources(&m, &renditions);
     let og = og_video(&sources).cloned();
+    let quality = if is_image {
+        Vec::new()
+    } else {
+        quality_rows(&settings.ladder, &renditions, admin.is_some())
+    };
     let tags = crate::db::tags::for_media(&state.db, &m.id).await?;
 
     let original_path = media_url(&m, &format!("original.{}", m.extension));
@@ -296,6 +333,7 @@ async fn clip_page(
             .map(|t| t.name.as_str())
             .collect::<Vec<_>>()
             .join(", "),
+        quality,
         sources,
         base,
         media: m,

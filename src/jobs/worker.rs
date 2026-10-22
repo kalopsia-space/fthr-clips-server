@@ -53,6 +53,7 @@ async fn run_job(state: &AppState, job: &Job, cancel: CancellationToken) -> anyh
         super::POSTER => poster::poster(state, job, cancel).await,
         super::PREVIEW => poster::preview(state, job, cancel).await,
         super::THUMB => thumb::thumb(state, job).await,
+        k if k.starts_with("transcode:") => super::transcode::transcode(state, job, cancel).await,
         other => anyhow::bail!("no handler for job kind {other}"),
     }
 }

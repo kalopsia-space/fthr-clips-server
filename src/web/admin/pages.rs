@@ -407,8 +407,11 @@ async fn settings_page_response(
                 s: SettingsView::new(&settings),
                 video_dirs: dirs(&state.config.video_dirs),
                 image_dirs: dirs(&state.config.image_dirs),
-                // Filled in by the encoder probe (Task 14).
-                effective_encoder: String::new(),
+                effective_encoder: match super::api_settings::effective_encoder(state).await {
+                    Some(name) => name.to_string(),
+                    None if state.ffmpeg.available() => String::new(),
+                    None => "ffmpeg not found".to_string(),
+                },
             })?
             .into_response()
         };
@@ -477,13 +480,18 @@ async fn save_settings(
     if let Err(code) = require_csrf(session, headers, token) {
         return code.into_response();
     }
+    let old_encoder = state.settings.get().encoder;
     let result = match form_to_patch(tab, form) {
         Ok(mut patch) => match validate(&mut patch) {
             Ok(()) => state
                 .settings
                 .update(&state.db, patch)
                 .await
-                .map(|_| ())
+                .map(|new| {
+                    if new.encoder != old_encoder {
+                        super::api_settings::redetect(state, new.encoder);
+                    }
+                })
                 .map_err(|e| format!("{e:#}")),
             Err(e) => Err(e),
         },

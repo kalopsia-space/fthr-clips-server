@@ -392,6 +392,26 @@
       }
       api("PATCH", mediaUrl, body).then(reload, fail);
     });
+    $$("[data-transcode]", panel).forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var h = parseInt(btn.getAttribute("data-transcode"), 10);
+        api("POST", mediaUrl + "/transcode", { heights: [h] }).then(reload, fail);
+      });
+    });
+    $$("[data-remove-rendition]", panel).forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        api("DELETE", mediaUrl + "/renditions/" + encodeURIComponent(btn.getAttribute("data-remove-rendition"))).then(reload, fail);
+      });
+    });
+    var all = $("[data-transcode-all]", panel);
+    if (all) {
+      all.addEventListener("click", function () {
+        api("POST", "/admin/api/media/bulk", { action: "transcode", ids: [panel.getAttribute("data-id")] }).then(function (res) {
+          if (res && res.failed && res.failed.length) { toast(res.failed[0].error); return; }
+          reload();
+        }, fail);
+      });
+    }
     var del = $("[data-delete]", panel);
     if (del) {
       del.addEventListener("click", function () {

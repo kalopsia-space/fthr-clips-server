@@ -575,7 +575,16 @@ pub async fn bulk(
                 }
                 "move" => move_media(&state, &m, b.folder.as_deref().unwrap_or("")).await?,
                 "delete" => delete_media(&state, &m, b.delete_file).await?,
-                _ => return Err(ApiError::bad("not available yet")),
+                "transcode" => {
+                    let ladder = state.settings.get().ladder.clone();
+                    queue_heights(&state, &m, &ladder).await?;
+                }
+                "remove_renditions" => {
+                    for r in jobs::renditions_for(&state.db, &m.id).await? {
+                        remove_rendition(&state, &m, r.height).await?;
+                    }
+                }
+                _ => return Err(ApiError::bad("unknown action")),
             }
             Ok(())
         }
@@ -589,4 +598,91 @@ pub async fn bulk(
         }
     }
     Ok(Json(BulkResponse { ok, failed }))
+}
+
+const RUNGS: [u32; 3] = [480, 720, 1080];
+
+#[derive(Deserialize)]
+struct TranscodeBody {
+    heights: Vec<u32>,
+}
+
+async fn queue_heights(state: &AppState, m: &Media, heights: &[u32]) -> Result<(), ApiError> {
+    if m.kind != MediaKind::Video {
+        return Err(ApiError::bad("only videos can be transcoded"));
+    }
+    if !state.ffmpeg.available() {
+        return Err(ApiError::bad("ffmpeg not found"));
+    }
+    for h in heights {
+        crate::jobs::transcode::queue_rendition(state, &m.id, *h).await?;
+    }
+    Ok(())
+}
+
+/// Cancels any active job for the rung, deletes the file and the row.
+async fn remove_rendition(state: &AppState, m: &Media, height: i64) -> Result<(), ApiError> {
+    let h = u32::try_from(height).map_err(|_| ApiError::bad("bad height"))?;
+    let ids = jobs::cancel_active_kind(&state.db, &m.id, &crate::jobs::transcode_kind(h)).await?;
+    {
+        let running = state.running.lock().unwrap_or_else(|e| e.into_inner());
+        for id in ids {
+            if let Some(t) = running.get(&id) {
+                t.cancel();
+            }
+        }
+    }
+    jobs::rendition_delete(&state.db, &m.id, height).await?;
+    let derived = DerivedPaths::new(&state.config.data_dir, &m.id);
+    for f in [
+        derived.rendition(h),
+        derived.dir().join(format!("{h}p.tmp.mp4")),
+    ] {
+        match tokio::fs::remove_file(&f).await {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(anyhow::Error::from(e).into()),
+        }
+    }
+    Ok(())
+}
+
+/// `POST /admin/api/media/{id}/transcode` with `{"heights": [480, 720]}`.
+pub async fn transcode(
+    AdminSession(session): AdminSession,
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Json<AdminItem>, ApiError> {
+    require_csrf(&session, &headers, None)?;
+    let b: TranscodeBody = parse_body(&body)?;
+    if b.heights.is_empty() || !b.heights.iter().all(|h| RUNGS.contains(h)) {
+        return Err(ApiError::bad(
+            "heights must be a non-empty list of 480, 720 or 1080",
+        ));
+    }
+    let m = media::get(&state.db, &id)
+        .await?
+        .ok_or_else(ApiError::not_found)?;
+    queue_heights(&state, &m, &b.heights).await?;
+    item_json(&state, &id).await
+}
+
+/// `DELETE /admin/api/media/{id}/renditions/{h}`.
+pub async fn delete_rendition(
+    AdminSession(session): AdminSession,
+    State(state): State<AppState>,
+    Path((id, h)): Path<(String, u32)>,
+    headers: HeaderMap,
+) -> Result<Json<AdminItem>, ApiError> {
+    require_csrf(&session, &headers, None)?;
+    if !RUNGS.contains(&h) {
+        return Err(ApiError::bad("height must be 480, 720 or 1080"));
+    }
+    let m = media::get(&state.db, &id)
+        .await?
+        .ok_or_else(ApiError::not_found)?;
+    remove_rendition(&state, &m, i64::from(h)).await?;
+    item_json(&state, &id).await
 }

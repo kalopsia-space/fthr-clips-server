@@ -17,7 +17,7 @@
     <option value="qsv"{% if s.encoder == "qsv" %} selected{% endif %}>Quick Sync</option>
     <option value="videotoolbox"{% if s.encoder == "videotoolbox" %} selected{% endif %}>VideoToolbox</option>
   </select></label>
-  <div class="set-row"><span class="set-label">Detected encoder</span><span class="set-ro">{% if effective_encoder.is_empty() %}not detected yet{% else %}{{ effective_encoder }}{% endif %}</span></div>
+  <div class="set-row"><span class="set-label">Detected encoder</span><span class="set-ro">{% if effective_encoder.is_empty() %}detecting…{% else %}{{ effective_encoder }}{% endif %}</span></div>
   <fieldset class="set-row"><legend class="set-label">Quality ladder</legend>
     <label class="check"><input type="checkbox" name="ladder" value="480"{% if s.ladder_480 %} checked{% endif %}><span>480p</span></label>
     <label class="check"><input type="checkbox" name="ladder" value="720"{% if s.ladder_720 %} checked{% endif %}><span>720p</span></label>

@@ -64,6 +64,14 @@ pub fn routes() -> Router<AppState> {
                 .delete(api_media::delete),
         )
         .route(
+            "/admin/api/media/{id}/transcode",
+            post(api_media::transcode),
+        )
+        .route(
+            "/admin/api/media/{id}/renditions/{h}",
+            axum::routing::delete(api_media::delete_rendition),
+        )
+        .route(
             "/admin/api/tags",
             get(api_tags::list).post(api_tags::create),
         )

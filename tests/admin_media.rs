@@ -245,9 +245,8 @@ async fn bulk_add_tag_and_link_only() {
         .unwrap();
     assert_eq!(one["tags"][0]["name"], "Best");
     assert_eq!(one["public"], false);
-    let j = bulk(json!({"action": "transcode", "ids": [a]})).await;
-    assert_eq!(j["ok"], 0);
-    assert_eq!(j["failed"][0]["error"], "not available yet");
+    let j = bulk(json!({"action": "remove_renditions", "ids": [a]})).await;
+    assert_eq!(j["ok"], 1);
 }
 
 #[tokio::test]

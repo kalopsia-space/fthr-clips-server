@@ -11,6 +11,7 @@
 
 pub mod poster;
 pub mod thumb;
+pub mod transcode;
 pub mod worker;
 
 use chrono::{DateTime, Utc};
