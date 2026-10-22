@@ -166,11 +166,7 @@ pub fn public_base(
         return base.to_string();
     }
     let scheme = if crate::web::security::is_trusted_peer(peer, trusted) {
-        headers
-            .get("x-forwarded-proto")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.split(',').next())
-            .map(|v| v.trim().to_ascii_lowercase())
+        crate::web::security::forwarded_proto(headers)
             .filter(|v| v == "https" || v == "http")
             .unwrap_or_else(|| "http".into())
     } else {
