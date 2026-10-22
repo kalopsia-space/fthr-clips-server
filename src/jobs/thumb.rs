@@ -23,7 +23,17 @@ pub async fn thumb(state: &AppState, job: &Job) -> anyhow::Result<()> {
     let tmp = derived.dir().join("thumb.tmp.jpg");
     let tmp2 = tmp.clone();
     let (w, h) = tokio::task::spawn_blocking(move || -> anyhow::Result<(u32, u32)> {
-        let img = image::open(&src).with_context(|| format!("decoding {}", src.display()))?;
+        let mut reader = image::ImageReader::open(&src)
+            .with_context(|| format!("opening {}", src.display()))?
+            .with_guessed_format()?;
+        let mut limits = image::Limits::default();
+        limits.max_alloc = Some(64 * 1024 * 1024);
+        limits.max_image_width = Some(16384);
+        limits.max_image_height = Some(16384);
+        reader.limits(limits);
+        let img = reader
+            .decode()
+            .with_context(|| format!("decoding {}", src.display()))?;
         let (w, h) = (img.width(), img.height());
         let img = if w.max(h) > MAX_EDGE {
             img.resize(MAX_EDGE, MAX_EDGE, FilterType::Lanczos3)

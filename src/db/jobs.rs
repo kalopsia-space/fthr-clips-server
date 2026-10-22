@@ -116,19 +116,44 @@ pub async fn set_progress(db: &Db, id: i64, progress: f64) -> Result<()> {
     Ok(())
 }
 
-pub async fn finish(db: &Db, id: i64) -> Result<()> {
-    sqlx::query(
-        "UPDATE job SET state = 'done', progress = 1, error = NULL, updated_at = ? WHERE id = ?",
+/// Mark a running job done. Returns false when it was no longer running
+/// (cancelled meanwhile), in which case nothing changes.
+pub async fn finish(db: &Db, id: i64) -> Result<bool> {
+    let r = sqlx::query(
+        "UPDATE job SET state = 'done', progress = 1, error = NULL, updated_at = ? \
+         WHERE id = ? AND state = 'running'",
     )
     .bind(Utc::now())
     .bind(id)
     .execute(&db.0)
     .await?;
-    Ok(())
+    Ok(r.rows_affected() > 0)
 }
 
-pub async fn fail(db: &Db, id: i64, error: &str) -> Result<()> {
-    set_state(db, id, "failed", Some(error), &[]).await
+/// Mark a running job failed; false when it was no longer running.
+pub async fn fail(db: &Db, id: i64, error: &str) -> Result<bool> {
+    let r = sqlx::query(
+        "UPDATE job SET state = 'failed', error = ?, updated_at = ? \
+         WHERE id = ? AND state = 'running'",
+    )
+    .bind(error)
+    .bind(Utc::now())
+    .bind(id)
+    .execute(&db.0)
+    .await?;
+    Ok(r.rows_affected() > 0)
+}
+
+/// Requeue jobs left `running` by a crash or restart. Returns how many.
+pub async fn reset_stale_running(db: &Db) -> Result<u64> {
+    let r = sqlx::query(
+        "UPDATE job SET state = 'queued', progress = 0, error = 'interrupted', updated_at = ? \
+         WHERE state = 'running'",
+    )
+    .bind(Utc::now())
+    .execute(&db.0)
+    .await?;
+    Ok(r.rows_affected())
 }
 
 pub async fn cancel(db: &Db, id: i64) -> Result<()> {

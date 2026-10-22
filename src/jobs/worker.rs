@@ -57,6 +57,22 @@ async fn run_job(state: &AppState, job: &Job, cancel: CancellationToken) -> anyh
     }
 }
 
+/// Removes a job's cancellation token from `AppState.running` on every path.
+struct RunningGuard<'a> {
+    state: &'a AppState,
+    id: i64,
+}
+
+impl Drop for RunningGuard<'_> {
+    fn drop(&mut self) {
+        self.state
+            .running
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&self.id);
+    }
+}
+
 async fn process(state: &AppState, job: Job) {
     let cancel = CancellationToken::new();
     state
@@ -64,13 +80,21 @@ async fn process(state: &AppState, job: Job) {
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .insert(job.id, cancel.clone());
+    let guard = RunningGuard { state, id: job.id };
     emit(state, &job, "running", 0.0, None);
-    let result = run_job(state, &job, cancel.clone()).await;
-    state
-        .running
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .remove(&job.id);
+    // Own task so a panic in a handler fails the job instead of the worker.
+    let handle = {
+        let (state, job) = (state.clone(), job.clone());
+        tokio::spawn(async move { run_job(&state, &job, cancel).await })
+    };
+    let result = match handle.await {
+        Ok(r) => r,
+        Err(join) => {
+            tracing::error!(job = job.id, "job task failed: {join}");
+            Err(anyhow::anyhow!("job panicked"))
+        }
+    };
+    drop(guard);
     if let Err(e) = settle(state, &job, result).await {
         tracing::warn!(job = job.id, "recording job outcome failed: {e:#}");
     }
@@ -86,8 +110,9 @@ async fn settle(state: &AppState, job: &Job, result: anyhow::Result<()>) -> anyh
                 emit(state, job, "cancelled", 0.0, None);
                 return Ok(());
             }
-            jobs::finish(&state.db, job.id).await?;
-            emit(state, job, "done", 1.0, None);
+            if jobs::finish(&state.db, job.id).await? {
+                emit(state, job, "done", 1.0, None);
+            }
         }
         Err(e) => {
             if cancelled().await {
