@@ -1,5 +1,6 @@
 //! Admin area: session extractors, CSRF helper and routes.
 
+pub mod api_jobs;
 pub mod api_media;
 pub mod api_settings;
 pub mod api_tags;
@@ -66,6 +67,11 @@ pub fn routes() -> Router<AppState> {
             "/admin/api/tags",
             get(api_tags::list).post(api_tags::create),
         )
+        .route("/admin/api/jobs", get(api_jobs::list))
+        .route("/admin/api/jobs/{id}/cancel", post(api_jobs::cancel))
+        .route("/admin/api/jobs/{id}/retry", post(api_jobs::retry))
+        .route("/admin/api/stats", get(api_jobs::stats))
+        .route("/admin/api/events", get(api_jobs::events))
         .route(
             "/admin/api/tokens",
             get(api_tokens::list).post(api_tokens::create),

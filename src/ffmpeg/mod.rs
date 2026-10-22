@@ -23,6 +23,7 @@ pub struct Ffmpeg {
     pub ffmpeg: Option<PathBuf>,
     pub ffprobe: Option<PathBuf>,
     pub version: Option<String>,
+    x264: std::sync::Arc<tokio::sync::OnceCell<bool>>,
 }
 
 impl Ffmpeg {
@@ -35,7 +36,29 @@ impl Ffmpeg {
             ffmpeg,
             ffprobe,
             version,
+            x264: Default::default(),
         }
+    }
+
+    /// Whether `libx264` is listed by `ffmpeg -encoders`; checked once and cached.
+    pub async fn has_x264(&self) -> bool {
+        *self
+            .x264
+            .get_or_init(|| async {
+                let Some(bin) = &self.ffmpeg else {
+                    return false;
+                };
+                let mut cmd = Command::new(bin);
+                cmd.args(["-hide_banner", "-encoders"])
+                    .stdin(Stdio::null())
+                    .kill_on_drop(true);
+                no_window(&mut cmd);
+                match tokio::time::timeout(Duration::from_secs(15), cmd.output()).await {
+                    Ok(Ok(out)) => String::from_utf8_lossy(&out.stdout).contains("libx264"),
+                    _ => false,
+                }
+            })
+            .await
     }
 
     pub fn available(&self) -> bool {

@@ -227,3 +227,54 @@ pub async fn rendition_ready(
     .await?;
     Ok(())
 }
+
+/// A job row joined with its media title (empty when the media is gone).
+#[derive(Debug, Clone, FromRow)]
+pub struct JobWithTitle {
+    #[sqlx(flatten)]
+    pub job: Job,
+    pub media_title: Option<String>,
+}
+
+const WITH_TITLE: &str = "SELECT j.*, m.title AS media_title FROM job j \
+     LEFT JOIN media m ON m.id = j.media_id";
+
+pub async fn list_active_titled(db: &Db) -> Result<Vec<JobWithTitle>> {
+    Ok(sqlx::query_as(&format!(
+        "{WITH_TITLE} WHERE j.state IN ('queued', 'running') ORDER BY j.id"
+    ))
+    .fetch_all(&db.0)
+    .await?)
+}
+
+/// Most recently updated jobs that are no longer active.
+pub async fn list_recent(db: &Db, limit: i64) -> Result<Vec<JobWithTitle>> {
+    Ok(sqlx::query_as(&format!(
+        "{WITH_TITLE} WHERE j.state NOT IN ('queued', 'running') \
+         ORDER BY j.updated_at DESC, j.id DESC LIMIT ?"
+    ))
+    .bind(limit)
+    .fetch_all(&db.0)
+    .await?)
+}
+
+pub async fn get(db: &Db, id: i64) -> Result<Option<Job>> {
+    Ok(sqlx::query_as("SELECT * FROM job WHERE id = ?")
+        .bind(id)
+        .fetch_optional(&db.0)
+        .await?)
+}
+
+/// Put a running job back in the queue after a failed attempt, keeping the error.
+pub async fn requeue(db: &Db, id: i64, error: &str) -> Result<()> {
+    sqlx::query(
+        "UPDATE job SET state = 'queued', progress = 0, error = ?, updated_at = ? \
+         WHERE id = ? AND state = 'running'",
+    )
+    .bind(error)
+    .bind(Utc::now())
+    .bind(id)
+    .execute(&db.0)
+    .await?;
+    Ok(())
+}
