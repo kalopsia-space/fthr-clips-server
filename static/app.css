@@ -296,6 +296,8 @@ input[type=color] { width: 36px; height: 28px; padding: 0; border: 1px solid var
 .dlg p { color: var(--dim); margin: 0 0 12px; }
 .dlg .check { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; font-size: 13px; }
 .dlg-actions { display: flex; justify-content: flex-end; gap: 8px; }
+#token-value { width: 100%; box-sizing: border-box; margin-bottom: 12px; padding: 8px; font-family: monospace; background: var(--s1, #111); color: var(--text); border: 1px solid var(--border); border-radius: var(--r8); }
+.dlg:has(#token-value) { max-width: 460px; }
 .toast { position: fixed; right: 16px; bottom: 16px; z-index: 40; max-width: 360px; padding: 10px 14px; background: var(--s3); border: 1px solid var(--error); border-radius: var(--r6); color: var(--text); font-size: 13px; }
 .seg { display: flex; border: 1px solid var(--border); border-radius: var(--r6); overflow: hidden; }
 .seg-btn { flex: 1; height: 32px; background: var(--s3); color: var(--dim); border: 0; font-family: Oswald, sans-serif; font-size: 13px; letter-spacing: .3px; cursor: pointer; }

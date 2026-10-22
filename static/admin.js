@@ -284,12 +284,15 @@
       ev.preventDefault();
       var name = $("#token-new-name").value.trim();
       if (!name) { return; }
+      var submit = $("button[type=submit]", tokNew);
+      if (submit.disabled) { return; }
+      submit.disabled = true;
       api("POST", "/admin/api/tokens", { name: name }).then(function (res) {
         $("#token-value").value = res.token;
         tokDlg.addEventListener("close", reload, { once: true });
         tokDlg.showModal();
         $("#token-value").select();
-      }, fail);
+      }, function (e) { submit.disabled = false; fail(e); });
     });
     $("#token-copy").addEventListener("click", function () {
       var input = $("#token-value");
