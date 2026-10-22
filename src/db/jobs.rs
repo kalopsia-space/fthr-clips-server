@@ -29,35 +29,38 @@ pub struct Rendition {
 }
 
 /// Queue a job. If a queued or running job for the same `(media_id, kind)`
-/// exists, nothing is inserted and its id is returned.
+/// exists, nothing is inserted and its id is returned. Atomic: a single
+/// INSERT guarded by the partial unique index `idx_job_active`.
 pub async fn enqueue(db: &Db, media_id: &str, kind: &str) -> Result<i64> {
     let now = Utc::now();
-    let mut tx = db.0.begin().await?;
-    let existing: Option<i64> = sqlx::query_scalar(
-        "SELECT id FROM job WHERE media_id = ? AND kind = ? \
-         AND state IN ('queued', 'running') ORDER BY id LIMIT 1",
-    )
-    .bind(media_id)
-    .bind(kind)
-    .fetch_optional(&mut *tx)
-    .await?;
-    let id = match existing {
-        Some(id) => id,
-        None => {
-            sqlx::query_scalar(
-                "INSERT INTO job (media_id, kind, created_at, updated_at) \
-                 VALUES (?, ?, ?, ?) RETURNING id",
-            )
-            .bind(media_id)
-            .bind(kind)
-            .bind(now)
-            .bind(now)
-            .fetch_one(&mut *tx)
-            .await?
+    // The active job could finish between the insert and the select; retry then.
+    for _ in 0..5 {
+        let inserted: Option<i64> = sqlx::query_scalar(
+            "INSERT INTO job (media_id, kind, created_at, updated_at) \
+             VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING RETURNING id",
+        )
+        .bind(media_id)
+        .bind(kind)
+        .bind(now)
+        .bind(now)
+        .fetch_optional(&db.0)
+        .await?;
+        if let Some(id) = inserted {
+            return Ok(id);
         }
-    };
-    tx.commit().await?;
-    Ok(id)
+        let existing: Option<i64> = sqlx::query_scalar(
+            "SELECT id FROM job WHERE media_id = ? AND kind = ? \
+             AND state IN ('queued', 'running') ORDER BY id LIMIT 1",
+        )
+        .bind(media_id)
+        .bind(kind)
+        .fetch_optional(&db.0)
+        .await?;
+        if let Some(id) = existing {
+            return Ok(id);
+        }
+    }
+    anyhow::bail!("could not enqueue {kind} job for {media_id}")
 }
 
 /// Atomically move the oldest queued job of one of `kinds` to running.
