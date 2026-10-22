@@ -405,3 +405,84 @@ async fn move_stays_inside_root() {
     assert!(std::path::Path::new(&m.path).exists());
     assert!(m.path.contains("/uploads/sub/dir/"));
 }
+
+#[tokio::test]
+async fn move_clash_is_409_and_keeps_both_files() {
+    let s = server().await;
+    let (a, _) = upload(&s, 8).await;
+    let (b, _) = upload(&s, 9).await;
+    let (c, csrf) = login(&s, PW).await;
+    // Pre-place a file with b's name in the target folder.
+    let mb = media::get(s.db(), &b).await.unwrap().unwrap();
+    let name = std::path::Path::new(&mb.path)
+        .file_name()
+        .unwrap()
+        .to_owned();
+    let dir = s.data_dir.path().join("uploads/dest");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join(&name), b"keep me").unwrap();
+    let j: Value = c
+        .post(s.url("/admin/api/media/bulk"))
+        .header(H, &csrf)
+        .json(&json!({"action": "move", "folder": "dest", "ids": [b]}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(j["ok"], 0);
+    assert!(std::path::Path::new(&mb.path).exists());
+    assert_eq!(std::fs::read(dir.join(&name)).unwrap(), b"keep me");
+    let _ = a;
+}
+
+#[tokio::test]
+async fn move_through_symlink_out_of_root_is_refused() {
+    let s = server().await;
+    let (id, _) = upload(&s, 10).await;
+    let (c, csrf) = login(&s, PW).await;
+    let outside = tempfile::TempDir::new().unwrap();
+    let uploads = s.data_dir.path().join("uploads");
+    std::fs::create_dir_all(&uploads).unwrap();
+    std::os::unix::fs::symlink(outside.path(), uploads.join("link")).unwrap();
+    let j: Value = c
+        .post(s.url("/admin/api/media/bulk"))
+        .header(H, &csrf)
+        .json(&json!({"action": "move", "folder": "link/newdir", "ids": [id]}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(j["ok"], 0);
+    assert!(!outside.path().join("newdir").exists());
+    assert!(std::fs::read_dir(outside.path()).unwrap().next().is_none());
+}
+
+#[tokio::test]
+async fn bulk_caps_and_dedups_ids() {
+    let s = server().await;
+    let (id, _) = upload(&s, 11).await;
+    let (c, csrf) = login(&s, PW).await;
+    let post = |ids: Vec<String>| {
+        c.post(s.url("/admin/api/media/bulk"))
+            .header(H, csrf.clone())
+            .json(&json!({"action": "public", "ids": ids}))
+            .send()
+    };
+    let r = post((0..501).map(|i| i.to_string()).collect())
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 400);
+    assert_eq!(r.json::<Value>().await.unwrap()["error"], "too many ids");
+    let j: Value = post(vec![id.clone(), id])
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(j["ok"], 1);
+    assert_eq!(j["failed"], json!([]));
+}
