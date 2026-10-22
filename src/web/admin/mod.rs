@@ -71,6 +71,7 @@ pub fn routes() -> Router<AppState> {
         .route("/admin/api/jobs/{id}/cancel", post(api_jobs::cancel))
         .route("/admin/api/jobs/{id}/retry", post(api_jobs::retry))
         .route("/admin/api/stats", get(api_jobs::stats))
+        .route("/admin/api/scan", post(api_jobs::scan))
         .route("/admin/api/events", get(api_jobs::events))
         .route(
             "/admin/api/tokens",

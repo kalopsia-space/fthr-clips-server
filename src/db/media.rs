@@ -433,3 +433,28 @@ pub async fn set_dimensions(db: &Db, id: &str, width: i64, height: i64) -> Resul
         .await?;
     Ok(())
 }
+
+/// True when a deleted row's file at this path must not be re-added by the scanner.
+pub async fn is_tombstoned(db: &Db, path: &str) -> Result<bool> {
+    let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM tombstone WHERE path = ?")
+        .bind(path)
+        .fetch_one(&db.0)
+        .await?;
+    Ok(n > 0)
+}
+
+#[derive(Debug, Clone, FromRow)]
+pub struct PathRow {
+    pub id: String,
+    pub path: String,
+    pub available: bool,
+}
+
+/// Every row's id, stored path and availability (for the scanner's missing-file pass).
+pub async fn list_paths(db: &Db) -> Result<Vec<PathRow>> {
+    Ok(
+        sqlx::query_as::<_, PathRow>("SELECT id, path, available FROM media")
+            .fetch_all(&db.0)
+            .await?,
+    )
+}

@@ -214,6 +214,8 @@ pub async fn store_upload(state: &AppState, mut field: Field<'_>) -> Result<Medi
         .data_dir
         .join(safe_folder(&settings.upload_folder));
     tokio::fs::create_dir_all(&dir).await?;
+    // Stored paths are canonical so the scanner and uploads agree on identity.
+    let dir = tokio::fs::canonicalize(&dir).await?;
     let mut tmp_name = [0u8; 8];
     rand::rng().fill_bytes(&mut tmp_name);
     let temp = dir.join(format!(".incoming-{}", hex::encode(tmp_name)));
