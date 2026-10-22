@@ -18,6 +18,6 @@ USER 10001:10001
 ENV DATA_DIR=/data BIND_HOST=0.0.0.0 PORT=8080
 VOLUME /data
 EXPOSE 8080
-HEALTHCHECK --interval=30s --timeout=5s CMD curl -fsS http://127.0.0.1:8080/healthz || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD curl -fsS http://127.0.0.1:8080/healthz || exit 1
 ENTRYPOINT ["tini", "--"]
 CMD ["fthr-clips-server", "serve"]

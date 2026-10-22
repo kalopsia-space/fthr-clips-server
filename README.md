@@ -128,8 +128,6 @@ fthr-clips-server import-legacy
 
 For each old `<id>.json` sidecar the file is moved into `uploads/` under its original name, added to the library (the old "listed" flag becomes public), and queued for thumbnailing and transcoding. Old `/files/<id>` links redirect to the new pages. Files are moved, not copied, so disk use does not double. The import also runs automatically on first start when the data directory contains legacy sidecars and no `library.db`.
 
-Notes: musl release builds work without system libraries because SQLite is bundled and TLS uses rustls (no OpenSSL).
-
 ## CLI subcommands
 
 | Command | What it does |
@@ -144,12 +142,12 @@ Notes: musl release builds work without system libraries because SQLite is bundl
 
 ```sh
 cargo fmt --check
-cargo clippy --all-targets -- -D warnings
+cargo clippy --all-targets --locked -- -D warnings
 cargo test --locked
 cargo run -- check
 ```
 
-Tests in `tests/ffmpeg.rs` and `tests/transcode.rs`, and the media parts of `tests/jobs.rs`, need `ffmpeg` and `ffprobe`; without them they skip. CI runs Linux with ffmpeg, and macOS and Windows without it to exercise the skip paths. CI also builds the Docker image; pushing a `v*` tag builds release archives for five targets and publishes the multi-arch image to GHCR.
+Tests in `tests/ffmpeg.rs` and `tests/transcode.rs`, and the media parts of `tests/jobs.rs`, need `ffmpeg` and `ffprobe`; without them they skip. CI runs Linux with ffmpeg, and macOS and Windows without it to exercise the skip paths. Release builds for the musl targets need no system libraries because SQLite is bundled and TLS uses rustls (no OpenSSL). CI also builds the Docker image; pushing a `v*` tag builds release archives for five targets and publishes the multi-arch image to GHCR.
 
 ## License
 
