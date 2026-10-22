@@ -8,3 +8,5 @@ target/
 *.db
 *.db-wal
 *.db-shm
+dist/
+*.tar.gz
