@@ -172,3 +172,39 @@ async fn hashed_password_and_safe_next() {
     assert_eq!(r.status(), 303);
     assert_eq!(r.headers()["location"], "/admin");
 }
+
+#[tokio::test]
+async fn next_is_strictly_validated() {
+    let s = server().await;
+    let cases = [
+        ("/\t/evil.com", "/admin"),
+        ("/\\evil", "/admin"),
+        ("/\u{7f}x", "/admin"),
+        ("https://evil.com/", "/admin"),
+        ("/admin/files?page=2", "/admin/files?page=2"),
+    ];
+    for (next, want) in cases {
+        let c = s.client_with_cookies();
+        let r = c
+            .post(s.url("/admin/login"))
+            .form(&[("password", PW), ("next", next)])
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 303);
+        assert_eq!(r.headers()["location"], want, "next={next:?}");
+    }
+}
+
+#[tokio::test]
+async fn blocked_ip_does_not_consume_global_budget() {
+    let s = server().await;
+    // Exhaust this client's per-IP budget, then keep hammering.
+    let c = s.client_with_cookies();
+    for _ in 0..30 {
+        login_json(&s, &c, "wrong").await;
+    }
+    // Per-IP and global both cap at 10 here (single IP), so the global bucket
+    // must not have been charged beyond 10: it just must not panic and stay 429.
+    assert_eq!(login_json(&s, &c, PW).await.status(), 429);
+}

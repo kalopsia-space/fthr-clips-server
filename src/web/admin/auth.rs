@@ -13,6 +13,7 @@ use axum::response::{IntoResponse, Response};
 use axum::{Form, Json};
 use serde::Deserialize;
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
 use super::{require_csrf, safe_next, AdminSession, COOKIE_NAME};
@@ -69,7 +70,10 @@ fn password_ok(state: &AppState, supplied: &str) -> bool {
         };
     }
     if let Some(expected) = cfg.admin_password.as_deref() {
-        return bool::from(supplied.as_bytes().ct_eq(expected.as_bytes()));
+        // Compare fixed-length digests so the password length does not leak.
+        let a = Sha256::digest(supplied.as_bytes());
+        let b = Sha256::digest(expected.as_bytes());
+        return bool::from(a.ct_eq(&b));
     }
     false
 }
@@ -109,10 +113,9 @@ pub async fn login_submit(
     let json_mode = is_json(&headers);
     let trusted = &state.config.trusted_proxies;
     let ip = client_ip(&headers, peer.ip(), trusted);
-    // Evaluate both so each limiter records the attempt.
-    let per_ip = state.login_limiter.check(&ip.to_string());
-    let global = state.login_limiter.check("global");
-    if !(per_ip && global) {
+    // Only charge the global bucket when the per-IP check passed, so one
+    // blocked client cannot exhaust the global budget.
+    if !(state.login_limiter.check(&ip.to_string()) && state.login_limiter.check("global")) {
         return StatusCode::TOO_MANY_REQUESTS.into_response();
     }
 
