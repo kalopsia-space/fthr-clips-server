@@ -22,6 +22,9 @@ pub fn clean_name(raw: &str) -> Result<String, ApiError> {
     if n.is_empty() || n.chars().count() > 40 {
         return Err(ApiError::bad("tag name must be 1 to 40 characters"));
     }
+    if n.contains(',') {
+        return Err(ApiError::bad("tag names may not contain commas"));
+    }
     Ok(n.to_string())
 }
 

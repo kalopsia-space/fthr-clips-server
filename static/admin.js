@@ -87,11 +87,11 @@
     };
     var closeAsk = function () { pending = null; form.hidden = true; actions.hidden = false; text.value = ""; };
 
-    $$(".sel").forEach(function (cb) { cb.addEventListener("change", refresh); });
+    $$("input.sel").forEach(function (cb) { cb.addEventListener("change", refresh); });
     var selAll = $("#sel-all");
     if (selAll) {
       selAll.addEventListener("change", function () {
-        $$(".sel").forEach(function (cb) { cb.checked = selAll.checked; });
+        $$("input.sel").forEach(function (cb) { cb.checked = selAll.checked; });
         refresh();
       });
     }
@@ -288,12 +288,12 @@
     });
     $("#details-form").addEventListener("submit", function (ev) {
       ev.preventDefault();
-      var tags = $("#ed-tags").value.split(",").map(function (t) { return t.trim(); }).filter(Boolean);
-      api("PATCH", mediaUrl, {
-        title: $("#ed-title").value,
-        description: $("#ed-desc").value,
-        tags: tags
-      }).then(reload, fail);
+      var tagsEl = $("#ed-tags");
+      var body = { title: $("#ed-title").value, description: $("#ed-desc").value };
+      if (tagsEl.value !== tagsEl.defaultValue) {
+        body.tags = tagsEl.value.split(",").map(function (t) { return t.trim(); }).filter(Boolean);
+      }
+      api("PATCH", mediaUrl, body).then(reload, fail);
     });
     var del = $("[data-delete]", panel);
     if (del) {
