@@ -1,3 +1,6 @@
+pub mod assets;
+pub mod clip;
+pub mod library;
 pub mod media_files;
 pub mod security;
 pub mod upload;

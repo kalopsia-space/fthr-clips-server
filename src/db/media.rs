@@ -367,6 +367,13 @@ pub async fn count(db: &Db, kind: Option<MediaKind>, public_only: bool) -> Resul
     Ok(qb.build_query_scalar().fetch_one(&db.0).await?)
 }
 
+/// Number of rows matching the filters of `q` (ignores sort and paging).
+pub async fn count_matching(db: &Db, q: &ListQuery) -> Result<i64> {
+    let mut qb = QueryBuilder::<Sqlite>::new("SELECT COUNT(*) FROM media m");
+    push_filters(&mut qb, q);
+    Ok(qb.build_query_scalar().fetch_one(&db.0).await?)
+}
+
 pub async fn all_ids(db: &Db) -> Result<Vec<String>> {
     Ok(sqlx::query_scalar("SELECT id FROM media ORDER BY id")
         .fetch_all(&db.0)

@@ -1,0 +1,7 @@
+<nav class="rail" aria-label="Library">
+  <a class="rail-btn{% if rail == "clips" %} active{% endif %}" href="/"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ asset_v }}#i-clips"/></svg>Clips</a>
+  <a class="rail-btn{% if rail == "images" %} active{% endif %}" href="/images"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ asset_v }}#i-image"/></svg>Images</a>
+  <div class="grow"></div>
+  <a class="rail-btn small" href="/feed.rss"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ asset_v }}#i-rss"/></svg>RSS</a>
+  {% if signed_in %}<a class="rail-btn{% if rail == "admin" %} active{% endif %}" href="/admin"><svg class="icon" aria-hidden="true"><use href="/static/icons.svg?v={{ asset_v }}#i-settings"/></svg>Admin</a>{% endif %}
+</nav>
