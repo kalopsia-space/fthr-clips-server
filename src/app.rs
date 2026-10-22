@@ -1,0 +1,32 @@
+use std::sync::Arc;
+
+use anyhow::Context;
+use axum::{routing::get, Router};
+
+use crate::config::Config;
+use crate::web;
+
+#[derive(Clone)]
+pub struct AppState {
+    pub config: Arc<Config>,
+}
+
+pub fn build_router(state: AppState) -> Router {
+    Router::new()
+        .route("/healthz", get(web::healthz))
+        .with_state(state)
+}
+
+pub async fn serve(config: Config) -> anyhow::Result<()> {
+    let addr = format!("{}:{}", config.bind_host, config.port);
+    let state = AppState {
+        config: Arc::new(config),
+    };
+    let listener = tokio::net::TcpListener::bind(&addr)
+        .await
+        .with_context(|| format!("binding {addr}"))?;
+    tracing::info!("listening on {addr}");
+    axum::serve(listener, build_router(state))
+        .await
+        .context("server error")
+}
