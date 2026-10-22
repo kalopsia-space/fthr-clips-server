@@ -1,6 +1,7 @@
 //! Admin area: session extractors, CSRF helper and routes.
 
 pub mod api_media;
+pub mod api_settings;
 pub mod api_tags;
 pub mod auth;
 pub mod pages;
@@ -25,6 +26,26 @@ pub fn routes() -> Router<AppState> {
         .route("/admin", get(pages::root))
         .route("/admin/files", get(pages::files))
         .route("/admin/tags", get(pages::tags))
+        .route(
+            "/admin/library",
+            get(pages::library_get).post(pages::library_post),
+        )
+        .route(
+            "/admin/transcoding",
+            get(pages::transcoding_get).post(pages::transcoding_post),
+        )
+        .route(
+            "/admin/sharing",
+            get(pages::sharing_get).post(pages::sharing_post),
+        )
+        .route(
+            "/admin/integrations",
+            get(pages::integrations_get).post(pages::integrations_post),
+        )
+        .route(
+            "/admin/api/settings",
+            get(api_settings::get).put(api_settings::put),
+        )
         .route(
             "/admin/login",
             get(auth::login_page).post(auth::login_submit),

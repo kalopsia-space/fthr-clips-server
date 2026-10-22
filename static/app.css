@@ -309,3 +309,19 @@ input[type=color] { width: 36px; height: 28px; padding: 0; border: 1px solid var
   .stats { grid-template-columns: repeat(2, 1fr); }
   .adm-table { display: block; overflow-x: auto; }
 }
+.set-form { max-width: 640px; display: flex; flex-direction: column; gap: 14px; }
+.set-row { display: flex; flex-direction: column; gap: 4px; border: 0; padding: 0; margin: 0; }
+.set-row.check { flex-direction: row; align-items: center; gap: 8px; }
+.set-label { color: var(--dim); font-size: 13px; }
+.set-ro { color: var(--text); font-size: 13px; overflow-wrap: anywhere; }
+.set-hint { color: var(--muted); font-size: 12px; margin: 0; }
+.set-form input[type=text], .set-form input[type=number], .set-form select {
+  background: var(--panel, transparent); color: var(--text); border: 1px solid var(--border);
+  border-radius: 6px; height: 34px; padding: 0 10px; font: inherit;
+}
+.set-form input[type=checkbox] { accent-color: var(--accent); }
+.set-form fieldset .check { display: inline-flex; gap: 6px; margin-right: 14px; }
+.set-actions { margin-top: 6px; }
+.notice { max-width: 640px; padding: 8px 12px; border-radius: 6px; font-size: 13px; margin: 0 0 14px; border: 1px solid var(--border); }
+.notice.ok { color: var(--accent); border-color: var(--accent); }
+.notice.err { color: var(--error); border-color: rgba(255, 121, 93, .4); }

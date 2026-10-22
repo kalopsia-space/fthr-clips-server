@@ -1,0 +1,17 @@
+{% extends "admin/base.html" %}
+{% block admin_body %}
+{% if saved %}<p class="notice ok" role="status">Saved</p>{% endif %}
+{% if !error.is_empty() %}<p class="notice err" role="alert">{{ error }}</p>{% endif %}
+<form class="set-form" method="post" action="/admin/library">
+  <input type="hidden" name="csrf" value="{{ admin_csrf.as_deref().unwrap_or("") }}">
+  <div class="set-row"><span class="set-label">Video folders</span><span class="set-ro">{% for d in video_dirs %}<code>{{ d }}</code> {% endfor %}{% if video_dirs.is_empty() %}none{% endif %}</span></div>
+  <div class="set-row"><span class="set-label">Image folders</span><span class="set-ro">{% for d in image_dirs %}<code>{{ d }}</code> {% endfor %}{% if image_dirs.is_empty() %}none{% endif %}</span></div>
+  <p class="set-hint">Scan folders come from the server configuration and cannot be changed here.</p>
+  <label class="set-row"><span class="set-label">Scan interval (minutes, 0 = off)</span><input type="number" name="scan_interval_minutes" min="0" max="1440" value="{{ s.scan_interval_minutes }}"></label>
+  <label class="set-row"><span class="set-label">Video extensions</span><input type="text" name="video_exts" value="{{ s.video_exts }}"></label>
+  <label class="set-row"><span class="set-label">Image extensions</span><input type="text" name="image_exts" value="{{ s.image_exts }}"></label>
+  <label class="set-row"><span class="set-label">Upload folder</span><input type="text" name="upload_folder" value="{{ s.upload_folder }}"></label>
+  <label class="set-row check"><input type="checkbox" name="upload_default_public" value="1"{% if s.upload_default_public %} checked{% endif %}><span>New uploads are public</span></label>
+  <div class="set-actions"><button class="btn primary" type="submit">Save</button></div>
+</form>
+{% endblock %}

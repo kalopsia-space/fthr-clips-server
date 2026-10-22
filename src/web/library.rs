@@ -6,6 +6,8 @@ use std::net::SocketAddr;
 
 use askama::Template;
 use axum::extract::{ConnectInfo, Query, State};
+use axum::http::header::LOCATION;
+use axum::http::Uri;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
 use axum::Json;
@@ -426,26 +428,71 @@ async fn library_page(
     render(&page)
 }
 
+/// Enforces `library_requires_login`: `None` lets the request through,
+/// otherwise the response to send instead. Pages (`wants_html`) redirect to
+/// the login form and come back to `next`; APIs and feeds answer 401 JSON.
+pub fn library_gate(
+    settings: &crate::settings::Settings,
+    admin: &OptionalAdmin,
+    wants_html: bool,
+    next: &str,
+) -> Option<Response> {
+    if !settings.library_requires_login || admin.0.is_some() {
+        return None;
+    }
+    if wants_html {
+        let next = crate::web::admin::safe_next(Some(next));
+        let location = format!("/admin/login?next={}", urlencoding::encode(next));
+        Some((StatusCode::SEE_OTHER, [(LOCATION, location)]).into_response())
+    } else {
+        Some(
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"error": "unauthorized"})),
+            )
+                .into_response(),
+        )
+    }
+}
+
 /// `GET /`.
 pub async fn videos(
     State(state): State<AppState>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
-    OptionalAdmin(admin): OptionalAdmin,
+    admin: OptionalAdmin,
+    uri: Uri,
     headers: HeaderMap,
     Query(map): Query<HashMap<String, String>>,
-) -> Result<Html<String>, PageError> {
-    library_page(state, peer, headers, map, MediaKind::Video, admin).await
+) -> Result<Response, PageError> {
+    let next = uri.path_and_query().map_or("/", |p| p.as_str());
+    if let Some(r) = library_gate(&state.settings.get(), &admin, true, next) {
+        return Ok(r);
+    }
+    Ok(
+        library_page(state, peer, headers, map, MediaKind::Video, admin.0)
+            .await?
+            .into_response(),
+    )
 }
 
 /// `GET /images`.
 pub async fn images(
     State(state): State<AppState>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
-    OptionalAdmin(admin): OptionalAdmin,
+    admin: OptionalAdmin,
+    uri: Uri,
     headers: HeaderMap,
     Query(map): Query<HashMap<String, String>>,
-) -> Result<Html<String>, PageError> {
-    library_page(state, peer, headers, map, MediaKind::Image, admin).await
+) -> Result<Response, PageError> {
+    let next = uri.path_and_query().map_or("/", |p| p.as_str());
+    if let Some(r) = library_gate(&state.settings.get(), &admin, true, next) {
+        return Ok(r);
+    }
+    Ok(
+        library_page(state, peer, headers, map, MediaKind::Image, admin.0)
+            .await?
+            .into_response(),
+    )
 }
 
 #[derive(Serialize)]
@@ -478,10 +525,14 @@ pub struct LibraryResponse {
 pub async fn api_library(
     State(state): State<AppState>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    admin: OptionalAdmin,
     headers: HeaderMap,
     Query(map): Query<HashMap<String, String>>,
-) -> Result<Json<LibraryResponse>, PageError> {
+) -> Result<Response, PageError> {
     let settings = state.settings.get();
+    if let Some(r) = library_gate(&settings, &admin, false, "/") {
+        return Ok(r);
+    }
     let p = Params::from_query(&map, None, settings.default_sort);
     let listing = run_query(&state, &p).await?;
     let base = public_base(
@@ -519,5 +570,6 @@ pub async fn api_library(
         items,
         page: p.page,
         total: listing.total,
-    }))
+    })
+    .into_response())
 }

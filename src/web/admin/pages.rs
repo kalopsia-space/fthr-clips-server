@@ -5,15 +5,19 @@ use std::collections::HashMap;
 use askama::Template;
 use axum::extract::{Query, State};
 use axum::http::header::LOCATION;
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
+use axum::Form;
 use chrono::Utc;
 
-use super::AdminSession;
+use super::api_settings::{form_to_patch, validate};
+use super::{require_csrf, AdminSession};
 use crate::app::AppState;
 use crate::db::media::{self, ListQuery, MediaWithViews};
+use crate::db::sessions::Session;
 use crate::db::tags::{self, TagWithCount};
 use crate::media::kind::{MediaKind, Source};
+use crate::settings::Settings;
 use crate::web::assets::asset_v;
 use crate::web::library::{
     fmt_relative, fmt_size, page_path, poster_path, render, PageError, TagView,
@@ -227,4 +231,206 @@ pub async fn tags(
         default_colour: tags::DEFAULT_COLOUR,
     };
     Ok(render(&page)?.into_response())
+}
+
+/// Plain-string view of the settings for the form templates.
+pub struct SettingsView {
+    pub site_title: String,
+    pub public_base_url: String,
+    pub library_requires_login: bool,
+    pub default_sort: String,
+    pub upload_default_public: bool,
+    pub upload_folder: String,
+    pub scan_interval_minutes: u64,
+    pub video_exts: String,
+    pub image_exts: String,
+    pub transcoding: String,
+    pub encoder: String,
+    pub ladder_480: bool,
+    pub ladder_720: bool,
+    pub ladder_1080: bool,
+    pub transcode_workers: usize,
+    pub transcode_timeout_minutes: u64,
+    pub discord_webhook_url: String,
+    pub webhook_url: String,
+    pub webhooks_enabled: bool,
+}
+
+fn enum_name<T: serde::Serialize>(v: &T) -> String {
+    serde_json::to_value(v)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_string))
+        .unwrap_or_default()
+}
+
+impl SettingsView {
+    fn new(s: &Settings) -> Self {
+        Self {
+            site_title: s.site_title.clone(),
+            public_base_url: s.public_base_url.clone().unwrap_or_default(),
+            library_requires_login: s.library_requires_login,
+            default_sort: enum_name(&s.default_sort),
+            upload_default_public: s.upload_default_public,
+            upload_folder: s.upload_folder.clone(),
+            scan_interval_minutes: s.scan_interval_minutes,
+            video_exts: s.video_exts.join(", "),
+            image_exts: s.image_exts.join(", "),
+            transcoding: enum_name(&s.transcoding),
+            encoder: enum_name(&s.encoder),
+            ladder_480: s.ladder.contains(&480),
+            ladder_720: s.ladder.contains(&720),
+            ladder_1080: s.ladder.contains(&1080),
+            transcode_workers: s.transcode_workers,
+            transcode_timeout_minutes: s.transcode_timeout_minutes,
+            discord_webhook_url: s.discord_webhook_url.clone().unwrap_or_default(),
+            webhook_url: s.webhook_url.clone().unwrap_or_default(),
+            webhooks_enabled: s.webhooks_enabled,
+        }
+    }
+}
+
+macro_rules! settings_page {
+    ($name:ident, $path:literal) => {
+        #[derive(Template)]
+        #[template(path = $path)]
+        pub struct $name {
+            pub title: String,
+            pub site_title: String,
+            pub asset_v: &'static str,
+            pub rail: &'static str,
+            pub search_action: &'static str,
+            pub q: String,
+            pub signed_in: bool,
+            pub admin_csrf: Option<String>,
+            pub active: &'static str,
+            pub tabs: [(&'static str, &'static str, &'static str); 7],
+            pub saved: bool,
+            pub error: String,
+            pub s: SettingsView,
+            pub video_dirs: Vec<String>,
+            pub image_dirs: Vec<String>,
+            pub effective_encoder: String,
+        }
+    };
+}
+
+settings_page!(LibraryPage, "admin/library.html");
+settings_page!(TranscodingPage, "admin/transcoding.html");
+settings_page!(SharingPage, "admin/sharing.html");
+settings_page!(IntegrationsPage, "admin/integrations.html");
+
+async fn settings_page_response(
+    tab: &'static str,
+    label: &str,
+    session: Session,
+    state: &AppState,
+    map: &HashMap<String, String>,
+) -> Result<Response, PageError> {
+    let settings = state.settings.get();
+    let site_title = settings.site_title.clone();
+    macro_rules! build {
+        ($ty:ident) => {
+            render(&$ty {
+                title: format!("{label} - {site_title}"),
+                site_title: site_title.clone(),
+                asset_v: asset_v(),
+                rail: "admin",
+                search_action: "/admin/files",
+                q: String::new(),
+                signed_in: true,
+                admin_csrf: Some(session.csrf.clone()),
+                active: tab,
+                tabs: TABS,
+                saved: map.get("saved").is_some_and(|v| v == "1"),
+                error: map.get("error").cloned().unwrap_or_default(),
+                s: SettingsView::new(&settings),
+                video_dirs: dirs(&state.config.video_dirs),
+                image_dirs: dirs(&state.config.image_dirs),
+                // Filled in by the encoder probe (Task 14).
+                effective_encoder: String::new(),
+            })?
+            .into_response()
+        };
+    }
+    Ok(match tab {
+        "library" => build!(LibraryPage),
+        "transcoding" => build!(TranscodingPage),
+        "sharing" => build!(SharingPage),
+        _ => build!(IntegrationsPage),
+    })
+}
+
+fn dirs(v: &[std::path::PathBuf]) -> Vec<String> {
+    v.iter().map(|p| p.display().to_string()).collect()
+}
+
+macro_rules! settings_handlers {
+    ($get:ident, $post:ident, $tab:literal, $label:literal) => {
+        /// `GET /admin/<tab>`.
+        pub async fn $get(
+            AdminSession(session): AdminSession,
+            State(state): State<AppState>,
+            Query(map): Query<HashMap<String, String>>,
+        ) -> Result<Response, PageError> {
+            settings_page_response($tab, $label, session, &state, &map).await
+        }
+
+        /// `POST /admin/<tab>`.
+        pub async fn $post(
+            AdminSession(session): AdminSession,
+            State(state): State<AppState>,
+            headers: HeaderMap,
+            Form(form): Form<Vec<(String, String)>>,
+        ) -> Response {
+            save_settings($tab, &session, &state, &headers, &form).await
+        }
+    };
+}
+
+settings_handlers!(library_get, library_post, "library", "Library");
+settings_handlers!(
+    transcoding_get,
+    transcoding_post,
+    "transcoding",
+    "Transcoding"
+);
+settings_handlers!(sharing_get, sharing_post, "sharing", "Sharing");
+settings_handlers!(
+    integrations_get,
+    integrations_post,
+    "integrations",
+    "Integrations"
+);
+
+async fn save_settings(
+    tab: &str,
+    session: &Session,
+    state: &AppState,
+    headers: &HeaderMap,
+    form: &[(String, String)],
+) -> Response {
+    let token = form
+        .iter()
+        .find(|(k, _)| k == "csrf")
+        .map(|(_, v)| v.as_str());
+    if let Err(code) = require_csrf(session, headers, token) {
+        return code.into_response();
+    }
+    let result = match form_to_patch(tab, form) {
+        Ok(mut patch) => match validate(&mut patch) {
+            Ok(()) => state
+                .settings
+                .update(&state.db, patch)
+                .await
+                .map(|_| ())
+                .map_err(|e| format!("{e:#}")),
+            Err(e) => Err(e),
+        },
+        Err(e) => Err(e),
+    };
+    let location = match result {
+        Ok(()) => format!("/admin/{tab}?saved=1"),
+        Err(msg) => format!("/admin/{tab}?error={}", urlencoding::encode(&msg)),
+    };
+    (StatusCode::SEE_OTHER, [(LOCATION, location)]).into_response()
 }
