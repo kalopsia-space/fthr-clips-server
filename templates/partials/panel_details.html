@@ -1,0 +1,10 @@
+<section class="sect">
+  <h2 class="hd">Details</h2>
+  <div class="bd">
+    <div class="kv"><b>Title</b><span>{{ media.title }}</span></div>
+    {% if !is_image %}<div class="kv"><b>Duration</b><span>{{ duration }}</span></div>{% endif %}
+    {% if !resolution.is_empty() %}<div class="kv"><b>Resolution</b><span>{{ resolution }}</span></div>{% endif %}
+    <div class="kv"><b>Views</b><span>{{ views }}</span></div>
+    <div class="kv"><b>{{ date_label }}</b><span>{{ date_full }}</span></div>
+  </div>
+</section>

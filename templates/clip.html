@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block head %}<meta property="og:site_name" content="{{ site_title }}">
+<meta property="og:title" content="{{ media.title }}">
+<meta property="og:description" content="{{ og_description }}">
+<meta property="og:url" content="{{ page_url }}">
+<meta property="og:type" content="{% if is_image %}website{% else %}video.other{% endif %}">
+<meta property="og:image" content="{{ og_image }}">
+{% if let Some(w) = media.width %}<meta property="og:image:width" content="{{ w }}">
+{% endif %}{% if let Some(h) = media.height %}<meta property="og:image:height" content="{{ h }}">
+{% endif %}{% if let Some(v) = og_video %}<meta property="og:video" content="{{ base }}{{ v.url }}">
+{% if secure %}<meta property="og:video:secure_url" content="{{ base }}{{ v.url }}">
+{% endif %}<meta property="og:video:type" content="{{ v.mime }}">
+{% if let Some(w) = media.width %}<meta property="og:video:width" content="{{ w }}">
+{% endif %}{% if let Some(h) = media.height %}<meta property="og:video:height" content="{{ h }}">
+{% endif %}<meta name="twitter:card" content="player">
+<meta name="twitter:player" content="{{ page_url }}">
+{% else %}<meta name="twitter:card" content="summary_large_image">
+{% endif %}<meta name="twitter:title" content="{{ media.title }}">
+<meta name="twitter:image" content="{{ og_image }}">
+{% endblock %}
+{% block content %}
+<div class="clip">
+  <div class="player">
+    {% if is_image %}
+    <div class="stage image"><img src="{{ original_url }}" alt="{{ media.title }}"></div>
+    {% else %}
+    <div class="stage">
+      <video id="player" controls preload="metadata" poster="{{ poster_url }}" data-start="{{ start }}" playsinline>
+        {% for s in sources %}<source src="{{ s.url }}" type="{{ s.mime }}">
+        {% endfor %}
+      </video>
+    </div>
+    {% endif %}
+    <div class="under">
+      <h1>{{ media.title }}</h1>
+      <div class="meta">{{ meta_line }}</div>
+      {% if !media.description.is_empty() %}<p class="desc">{{ media.description }}</p>{% endif %}
+      {% if !tags.is_empty() %}<div class="tags">{% for tag in tags %}<a class="tag" href="/?tag={{ tag.name_enc }}" data-colour="{{ tag.colour }}">{{ tag.name }}</a>{% endfor %}</div>{% endif %}
+      {% if sources.len() > 1 %}
+      <div class="qrow"><label for="quality">Quality</label>
+        <select id="quality" data-quality>{% for s in sources %}<option value="{{ s.url }}">{{ s.label }}</option>{% endfor %}</select>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  <aside class="panel">
+    {% include "partials/panel_share.html" %}
+    {% include "partials/panel_details.html" %}
+    {% include "partials/panel_file.html" %}
+  </aside>
+</div>
+{% endblock %}

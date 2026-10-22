@@ -1,0 +1,10 @@
+<section class="sect">
+  <h2 class="hd">File</h2>
+  <div class="bd">
+    <div class="kv"><b>Type</b><span>{{ media.extension }}</span></div>
+    <div class="kv"><b>Size</b><span>{{ size }}</span></div>
+    {% if let Some(c) = media.codec_video %}<div class="kv"><b>Codec</b><span>{{ c }}{% if let Some(a) = media.codec_audio %} / {{ a }}{% endif %}</span></div>{% endif %}
+    {% if !bitrate.is_empty() %}<div class="kv"><b>Bitrate</b><span>{{ bitrate }}</span></div>{% endif %}
+    {% if !renditions.is_empty() %}<div class="kv"><b>Versions</b><span>{{ renditions }}</span></div>{% endif %}
+  </div>
+</section>
