@@ -1,7 +1,7 @@
 //! Media management API: `/admin/api/media`.
 
 use std::collections::HashMap;
-use std::path::{Component, Path as FsPath, PathBuf};
+use std::path::{Path as FsPath, PathBuf};
 
 use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
@@ -354,7 +354,6 @@ pub async fn delete_media(
     media: &Media,
     delete_file: bool,
 ) -> anyhow::Result<()> {
-    DerivedPaths::new(&state.config.data_dir, &media.id).remove_all()?;
     let file = canon(FsPath::new(&media.path));
     let in_upload = || match (&file, upload_root(state)) {
         (Some(f), Some(r)) => f.starts_with(r),
@@ -371,17 +370,27 @@ pub async fn delete_media(
         tracing::info!(id = %media.id, "delete: removing scanned file on request");
         true
     } else {
+        tracing::info!(id = %media.id, "delete: file kept, tombstone added");
         false
     };
-    if remove {
-        if let Some(f) = &file {
-            std::fs::remove_file(f)?;
-        }
+    if !remove {
+        media::add_tombstone(&state.db, &media.id, &media.path).await?;
     }
     media::delete(&state.db, &media.id).await?;
-    if !remove {
-        tracing::info!(id = %media.id, "delete: file kept, tombstone added");
-        media::add_tombstone(&state.db, &media.id, &media.path).await?;
+    // The row is gone; leftovers are logged, not fatal.
+    if let Err(e) = DerivedPaths::new(&state.config.data_dir, &media.id).remove_all() {
+        tracing::warn!(id = %media.id, error = %e, "delete: could not remove derived files");
+    }
+    if remove {
+        if let Some(f) = &file {
+            match std::fs::remove_file(f) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => {
+                    tracing::warn!(id = %media.id, error = %e, "delete: could not remove source file");
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -414,16 +423,25 @@ pub async fn move_media(state: &AppState, media: &Media, folder: &str) -> Result
     }
     .ok_or_else(|| ApiError::bad("file is not inside a movable root"))?;
     let dir = root.join(&folder);
-    // Components are validated, so this only fails on filesystem trouble.
-    if !dir.components().all(|c| !matches!(c, Component::ParentDir)) {
-        return Err(ApiError::bad("invalid folder"));
+    // Containment before any directory is created: every existing ancestor
+    // (symlinks resolved) must stay under the root.
+    let mut cur = root.clone();
+    for comp in folder.split('/') {
+        let next = cur.join(comp);
+        if std::fs::symlink_metadata(&next).is_err() {
+            break;
+        }
+        match canon(&next) {
+            Some(c) if c.starts_with(&root) => cur = next,
+            _ => return Err(ApiError::bad("invalid folder")),
+        }
     }
     tokio::fs::create_dir_all(&dir)
         .await
         .map_err(anyhow::Error::from)?;
-    // A symlinked folder component must not lead out of the root.
-    let dir = canon(&dir).filter(|d| d.starts_with(&root));
-    let dir = dir.ok_or_else(|| ApiError::bad("invalid folder"))?;
+    let dir = canon(&dir)
+        .filter(|d| d.starts_with(&root))
+        .ok_or_else(|| ApiError::bad("invalid folder"))?;
     let name = current
         .file_name()
         .ok_or_else(|| ApiError::bad("source file has no name"))?;
@@ -431,22 +449,40 @@ pub async fn move_media(state: &AppState, media: &Media, folder: &str) -> Result
     if target == current {
         return Ok(());
     }
-    if tokio::fs::try_exists(&target)
-        .await
-        .map_err(anyhow::Error::from)?
-    {
-        return Err(ApiError::new(
+    let clash = || {
+        ApiError::new(
             StatusCode::CONFLICT,
             "a file with that name already exists there",
-        ));
+        )
+    };
+    // Claim the target without ever overwriting: hard link, else create_new + copy.
+    match tokio::fs::hard_link(&current, &target).await {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => return Err(clash()),
+        Err(_) => {
+            match tokio::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&target)
+                .await
+            {
+                Ok(f) => drop(f),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => return Err(clash()),
+                Err(e) => return Err(anyhow::Error::from(e).into()),
+            }
+            if let Err(e) = tokio::fs::copy(&current, &target).await {
+                let _ = tokio::fs::remove_file(&target).await;
+                return Err(anyhow::Error::from(e).into());
+            }
+        }
     }
-    tokio::fs::rename(&current, &target)
-        .await
-        .map_err(anyhow::Error::from)?;
     if let Err(e) = media::relocate(&state.db, &media.id, &target.to_string_lossy(), &folder).await
     {
-        let _ = tokio::fs::rename(&target, &current).await;
+        let _ = tokio::fs::remove_file(&target).await;
         return Err(e.into());
+    }
+    if let Err(e) = tokio::fs::remove_file(&current).await {
+        tracing::warn!(id = %media.id, error = %e, "move: could not remove old file");
     }
     Ok(())
 }
@@ -480,7 +516,12 @@ pub async fn bulk(
     body: Bytes,
 ) -> Result<Json<BulkResponse>, ApiError> {
     require_csrf(&session, &headers, None)?;
-    let b: BulkBody = parse_body(&body)?;
+    let mut b: BulkBody = parse_body(&body)?;
+    if b.ids.len() > 500 {
+        return Err(ApiError::bad("too many ids"));
+    }
+    let mut seen = std::collections::HashSet::new();
+    b.ids.retain(|id| seen.insert(id.clone()));
     let tag = match b.action.as_str() {
         "add_tag" | "remove_tag" => {
             let t = b
