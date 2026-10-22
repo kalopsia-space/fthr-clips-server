@@ -1,28 +1,29 @@
 # Place as {data_dir}/config.toml. Keys are the lowercase environment variable names;
 # environment variables override this file, and admin-page settings override both.
-# Secrets are best kept in the environment. Values shown are the defaults.
+# Secrets are best kept in the environment. This is an annotated example: every line
+# is commented out; the default is noted where the example value differs from it.
 
-# upload_token = ""
-# admin_password_hash = ""         # from `fthr-clips-server hash-password`
-# public_base_url = "https://clips.example.com"
-# trusted_proxies = ["127.0.0.1"]  # IPs or CIDRs (a comma-separated string also works)
+# upload_token = ""  # default: none
+# admin_password_hash = ""  # default: none; from `fthr-clips-server hash-password`
+# public_base_url = "https://clips.example.com"  # default: none
+# trusted_proxies = ["127.0.0.1"]  # IPs or CIDRs; a comma-separated string also works; default: none
 # max_upload_bytes = 524288000
 
 # bind_host = "127.0.0.1"
 # port = 8080
 
-# video_dirs = ["/videos"]
-# image_dirs = ["/images"]
+# video_dirs = ["/videos"]  # default: none
+# image_dirs = ["/images"]  # default: none
 # scan_interval_minutes = 15
 
 # transcoding = "compat"           # off | compat | on
 # encoder = "auto"                 # auto | x264 | nvenc | vaapi | qsv | videotoolbox
 # transcode_workers = 1
 # transcode_timeout_minutes = 60
-# ffmpeg_path = ""
-# ffprobe_path = ""
+# ffmpeg_path = ""  # default: found on PATH
+# ffprobe_path = ""  # default: found on PATH
 
-# discord_webhook_url = ""
-# webhook_url = ""
+# discord_webhook_url = ""  # default: none
+# webhook_url = ""  # default: none
 # site_title = "FTHR Clips"
 # log_level = "info"
