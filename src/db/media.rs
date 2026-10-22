@@ -458,3 +458,22 @@ pub async fn list_paths(db: &Db) -> Result<Vec<PathRow>> {
             .await?,
     )
 }
+
+/// Atomically claim the one-time webhook announcement for `id`.
+/// Returns true only for the caller that inserted the row.
+pub async fn claim_webhook(db: &Db, id: &str) -> Result<bool> {
+    let r = sqlx::query("INSERT OR IGNORE INTO webhook_sent (media_id) VALUES (?)")
+        .bind(id)
+        .execute(&db.0)
+        .await?;
+    Ok(r.rows_affected() == 1)
+}
+
+/// Release a claim so a later trigger may retry (used when every send failed).
+pub async fn release_webhook(db: &Db, id: &str) -> Result<()> {
+    sqlx::query("DELETE FROM webhook_sent WHERE media_id = ?")
+        .bind(id)
+        .execute(&db.0)
+        .await?;
+    Ok(())
+}

@@ -50,6 +50,8 @@ pub struct AppState {
     pub last_scan: Arc<tokio::sync::RwLock<Option<ScanSummary>>>,
     /// Single-flight control for the library scanner.
     pub scan: Arc<crate::media::scan::ScanControl>,
+    /// Shared HTTP client for outgoing webhooks (10 s timeout).
+    pub http: reqwest::Client,
 }
 
 impl AppState {
@@ -81,6 +83,11 @@ impl AppState {
             running: Arc::new(Mutex::new(HashMap::new())),
             last_scan: Arc::new(tokio::sync::RwLock::new(None)),
             scan: Arc::new(crate::media::scan::ScanControl::default()),
+            http: reqwest::Client::builder()
+                .timeout(Duration::from_secs(10))
+                .user_agent(concat!("fthr-clips-server/", env!("CARGO_PKG_VERSION")))
+                .build()
+                .expect("http client"),
         }
     }
 }

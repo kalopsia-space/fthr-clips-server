@@ -293,6 +293,9 @@ pub async fn patch(
     }
     if let Some(p) = b.public {
         media::set_public(&state.db, std::slice::from_ref(&id), p).await?;
+        if p {
+            crate::webhooks::maybe_announce(&state, &id).await;
+        }
     }
     if b.tags.is_some() {
         for t in tags::for_media(&state.db, &id).await? {
@@ -559,7 +562,10 @@ pub async fn bulk(
                 .ok_or_else(ApiError::not_found)?;
             let one = std::slice::from_ref(id);
             match b.action.as_str() {
-                "public" => media::set_public(&state.db, one, true).await?,
+                "public" => {
+                    media::set_public(&state.db, one, true).await?;
+                    crate::webhooks::maybe_announce(&state, id).await;
+                }
                 "link_only" => media::set_public(&state.db, one, false).await?,
                 "add_tag" => {
                     tags::attach_by_name(&state.db, one, tag.as_deref().unwrap_or("")).await?;

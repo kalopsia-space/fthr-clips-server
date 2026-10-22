@@ -101,6 +101,7 @@ pub async fn poster(state: &AppState, job: &Job, cancel: CancellationToken) -> a
     commit(&tmp, &derived.poster()).await?;
     media::set_flags(&state.db, &m.id, Some(true), None, None).await?;
     media::set_processing(&state.db, &m.id, "ready", None).await?;
+    crate::webhooks::maybe_announce(state, &m.id).await;
     Ok(())
 }
 

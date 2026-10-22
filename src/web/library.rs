@@ -515,6 +515,31 @@ pub struct LibraryItem {
     pub tags: Vec<TagView>,
 }
 
+impl LibraryItem {
+    /// Absolute URLs are `base` + path (`base` has no trailing slash).
+    pub fn build(r: &MediaWithViews, base: &str) -> LibraryItem {
+        let m = &r.media;
+        LibraryItem {
+            id: m.id.clone(),
+            slug: m.slug.clone(),
+            kind: m.kind.as_str(),
+            title: m.title.clone(),
+            url: format!("{base}{}", page_path(m)),
+            poster_url: format!("{base}{}", poster_path(m)),
+            preview_url: (m.has_preview && m.kind == MediaKind::Video)
+                .then(|| format!("{base}{}", media_url(m, "preview.mp4"))),
+            duration_ms: m.duration_ms,
+            width: m.width,
+            height: m.height,
+            size: m.size,
+            views: r.views,
+            created_at: m.created_at,
+            recorded_at: m.recorded_at,
+            tags: r.tags.iter().map(|t| TagView::new(t, "")).collect(),
+        }
+    }
+}
+
 #[derive(Serialize)]
 pub struct LibraryResponse {
     pub items: Vec<LibraryItem>,
@@ -545,27 +570,7 @@ pub async fn api_library(
     let items = listing
         .rows
         .iter()
-        .map(|r| {
-            let m = &r.media;
-            LibraryItem {
-                id: m.id.clone(),
-                slug: m.slug.clone(),
-                kind: m.kind.as_str(),
-                title: m.title.clone(),
-                url: format!("{base}{}", page_path(m)),
-                poster_url: format!("{base}{}", poster_path(m)),
-                preview_url: (m.has_preview && m.kind == MediaKind::Video)
-                    .then(|| format!("{base}{}", media_url(m, "preview.mp4"))),
-                duration_ms: m.duration_ms,
-                width: m.width,
-                height: m.height,
-                size: m.size,
-                views: r.views,
-                created_at: m.created_at,
-                recorded_at: m.recorded_at,
-                tags: r.tags.iter().map(|t| TagView::new(t, "")).collect(),
-            }
-        })
+        .map(|r| LibraryItem::build(r, &base))
         .collect();
     Ok(Json(LibraryResponse {
         items,
