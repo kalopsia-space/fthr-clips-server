@@ -65,7 +65,10 @@ pub struct OptionalAdmin(pub Option<Session>);
 pub fn safe_next(next: Option<&str>) -> &str {
     match next {
         Some(n)
-            if n.starts_with('/') && !n.starts_with("//") && !n.contains(['\\', '\r', '\n']) =>
+            if n.starts_with('/')
+                && !n.starts_with("//")
+                && !n.starts_with("/\\")
+                && n.bytes().all(|b| b > 0x20 && b != 0x7f && b != b'\\') =>
         {
             n
         }
