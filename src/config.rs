@@ -69,12 +69,26 @@ impl Config {
         Self::from_env_map(&env, toml_text.as_deref())
     }
 
+    /// Resolve the data dir: env DATA_DIR, env STORAGE_DIR, toml data_dir, toml storage_dir.
+    fn resolve_data_dir(
+        env: &HashMap<String, String>,
+        toml: &HashMap<String, String>,
+    ) -> Option<PathBuf> {
+        [
+            (env, "DATA_DIR"),
+            (env, "STORAGE_DIR"),
+            (toml, "DATA_DIR"),
+            (toml, "STORAGE_DIR"),
+        ]
+        .into_iter()
+        .filter_map(|(m, k)| m.get(k))
+        .map(|v| v.trim())
+        .find(|v| !v.is_empty())
+        .map(PathBuf::from)
+    }
+
     fn data_dir_from(env: &HashMap<String, String>) -> PathBuf {
-        env.get("DATA_DIR")
-            .or_else(|| env.get("STORAGE_DIR"))
-            .filter(|v| !v.is_empty())
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("data"))
+        Self::resolve_data_dir(env, &HashMap::new()).unwrap_or_else(|| PathBuf::from("data"))
     }
 
     /// Build a config from an explicit environment map and optional TOML text.
@@ -105,18 +119,8 @@ impl Config {
                 m.insert(k.to_uppercase(), s);
             }
         }
-        if let Some(v) = m.remove("STORAGE_DIR") {
-            m.entry("DATA_DIR".into()).or_insert(v);
-        }
-        for (k, v) in vars {
-            if k == "STORAGE_DIR" {
-                continue;
-            }
-            m.insert(k.clone(), v.clone());
-        }
-        if let Some(v) = vars.get("STORAGE_DIR") {
-            m.entry("DATA_DIR".into()).or_insert_with(|| v.clone());
-        }
+        let data_dir = Self::resolve_data_dir(vars, &m);
+        m.extend(vars.iter().map(|(k, v)| (k.clone(), v.clone())));
 
         let get = |k: &str| m.get(k).map(|s| s.trim()).filter(|s| !s.is_empty());
         let text = |k: &str| get(k).map(str::to_owned);
@@ -168,11 +172,9 @@ impl Config {
         };
 
         Ok(Config {
-            bind_host: text("BIND_HOST").unwrap_or_else(|| "0.0.0.0".into()),
+            bind_host: text("BIND_HOST").unwrap_or_else(|| "127.0.0.1".into()),
             port: num("PORT", get("PORT"), 8080)?,
-            data_dir: get("DATA_DIR")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| PathBuf::from("data")),
+            data_dir: data_dir.unwrap_or_else(|| PathBuf::from("data")),
             video_dirs: list("VIDEO_DIRS"),
             image_dirs: list("IMAGE_DIRS"),
             upload_token: text("UPLOAD_TOKEN"),
