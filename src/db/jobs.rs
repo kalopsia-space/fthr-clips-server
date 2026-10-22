@@ -317,17 +317,19 @@ pub async fn rendition_progress(db: &Db, media_id: &str, height: i64, progress: 
     Ok(())
 }
 
-/// Mark an existing rendition failed (never creates one).
-pub async fn rendition_fail(db: &Db, media_id: &str, height: i64, error: &str) -> Result<()> {
-    sqlx::query(
-        "UPDATE rendition SET state = 'failed', error = ? WHERE media_id = ? AND height = ?",
+/// Mark a queued or running rendition failed (never creates a row, never
+/// touches a ready one). Returns whether a row changed.
+pub async fn rendition_fail(db: &Db, media_id: &str, height: i64, error: &str) -> Result<bool> {
+    let r = sqlx::query(
+        "UPDATE rendition SET state = 'failed', error = ? \
+         WHERE media_id = ? AND height = ? AND state IN ('queued', 'running')",
     )
     .bind(error)
     .bind(media_id)
     .bind(height)
     .execute(&db.0)
     .await?;
-    Ok(())
+    Ok(r.rows_affected() > 0)
 }
 
 /// Cancel every queued or running job of `kind` for a media item; returns their ids.

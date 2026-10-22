@@ -1,5 +1,5 @@
 //! `transcode:{height}` jobs and the mode rules that decide which renditions
-//! a freshly probed video gets. Output goes to `{h}p.tmp.mp4` and is renamed
+//! a freshly probed video gets. Output goes to `{h}p.{job}.tmp.mp4` and is renamed
 //! into place; nothing is ever upscaled.
 
 use std::ffi::OsString;
@@ -117,7 +117,7 @@ pub async fn transcode(
         .ok_or_else(|| anyhow!("media {} no longer exists", job.media_id))?;
     let derived = DerivedPaths::new(&state.config.data_dir, &m.id);
     tokio::fs::create_dir_all(derived.dir()).await?;
-    let tmp = derived.dir().join(format!("{h}p.tmp.mp4"));
+    let tmp = derived.rendition_tmp(h, job.id);
     let dest = derived.rendition(h);
     let hi = i64::from(h);
 
@@ -125,7 +125,7 @@ pub async fn transcode(
     // it failed if the job gives up.
     let Some(enc) = encoder(state, &cancel).await? else {
         let msg = "no working encoder";
-        jobs::rendition_fail(&state.db, &m.id, hi, msg).await?;
+        let _ = jobs::rendition_fail(&state.db, &m.id, hi, msg).await?;
         worker::emit(state, job, "failed", 0.0, Some(msg.into()));
         return Ok(());
     };

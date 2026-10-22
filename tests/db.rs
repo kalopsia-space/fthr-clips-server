@@ -629,3 +629,23 @@ async fn retry_refuses_when_an_active_job_exists() {
     // Not retryable once active.
     assert!(!db::jobs::retry(&db, a).await.unwrap());
 }
+
+#[tokio::test]
+async fn rendition_fail_only_touches_queued_or_running() {
+    let db = Db::open_memory().await.unwrap();
+    add(&db, "a", "A").await;
+    db::jobs::rendition_upsert(&db, &rendition("a", 720, "running"))
+        .await
+        .unwrap();
+    db::jobs::rendition_ready(&db, "a", 720, "/r/720.mp4", 9)
+        .await
+        .unwrap();
+    assert!(!db::jobs::rendition_fail(&db, "a", 720, "x").await.unwrap());
+    let r = db::jobs::renditions_for(&db, "a").await.unwrap();
+    assert_eq!(r[0].state, "ready");
+    db::jobs::rendition_upsert(&db, &rendition("a", 480, "queued"))
+        .await
+        .unwrap();
+    assert!(db::jobs::rendition_fail(&db, "a", 480, "x").await.unwrap());
+    assert!(!db::jobs::rendition_fail(&db, "a", 1080, "x").await.unwrap());
+}

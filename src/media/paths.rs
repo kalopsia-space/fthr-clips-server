@@ -34,6 +34,25 @@ impl DerivedPaths {
         self.dir.join(format!("{height}p.mp4"))
     }
 
+    /// Per-job temp output so one job's cleanup never touches another's file.
+    pub fn rendition_tmp(&self, height: u32, job_id: i64) -> PathBuf {
+        self.dir.join(format!("{height}p.{job_id}.tmp.mp4"))
+    }
+
+    /// Removes every temp output of a rung (jobs unknown); missing files are fine.
+    pub fn remove_rendition_tmps(&self, height: u32) {
+        let (prefix, suffix) = (format!("{height}p."), ".tmp.mp4");
+        let Ok(rd) = std::fs::read_dir(&self.dir) else {
+            return;
+        };
+        for e in rd.flatten() {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if name.starts_with(&prefix) && name.ends_with(suffix) {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+    }
+
     /// Removes the derived directory; a missing directory is not an error.
     pub fn remove_all(&self) -> io::Result<()> {
         match std::fs::remove_dir_all(&self.dir) {

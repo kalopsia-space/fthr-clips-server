@@ -316,16 +316,43 @@ async fn unavailable_encoder_fails_rendition_without_retries() {
     assert_eq!(job["state"], "done", "job must complete, not retry or fail");
 }
 
+/// Long 720p clip so the encode is still running when we cancel.
+fn long_720(dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    let out = dir.join("long.mp4");
+    let ok = std::process::Command::new("ffmpeg")
+        .args(["-nostdin", "-hide_banner", "-loglevel", "error"])
+        .args([
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=duration=300:size=1280x720:rate=30",
+        ])
+        .args([
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-pix_fmt",
+            "yuv420p",
+            "-y",
+        ])
+        .arg(&out)
+        .status()
+        .ok()?
+        .success();
+    ok.then_some(out)
+}
+
 #[tokio::test]
 async fn admin_cancel_marks_rendition_failed_and_removes_tmp() {
     let tmp = tempfile::TempDir::new().unwrap();
-    let Some(fx) = mp4_480(tmp.path()) else {
+    let Some(fx) = long_720(tmp.path()) else {
         eprintln!("skipped: ffmpeg not found");
         return;
     };
     let s = server(&[("TRANSCODING", "off")]).await;
     let (c, csrf) = login(&s, PW).await;
-    let id = upload_id(&s, "ok.mp4", std::fs::read(fx).unwrap()).await;
+    let id = upload_id(&s, "long.mp4", std::fs::read(fx).unwrap()).await;
     assert!(
         wait_for(30, || async {
             media::get(s.db(), &id)
@@ -337,15 +364,35 @@ async fn admin_cancel_marks_rendition_failed_and_removes_tmp() {
         })
         .await
     );
-    let item = post_transcode(&s, &c, &csrf, &id, 480).await;
+    let item = post_transcode(&s, &c, &csrf, &id, 720).await;
     let job_id = item["jobs"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|j| j["kind"] == "transcode:480")
+        .find(|j| j["kind"] == "transcode:720")
         .unwrap()["id"]
         .as_i64()
         .unwrap();
+    let dir = fthr_clips_server::media::paths::DerivedPaths::new(s.data_dir.path(), &id).dir();
+    let tmp_file = dir.join(format!("720p.{job_id}.tmp.mp4"));
+    let job_state = |item: &Value| {
+        item["jobs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|j| j["id"].as_i64() == Some(job_id))
+            .map(|j| j["state"].as_str().unwrap().to_string())
+    };
+    let mut running = false;
+    for _ in 0..300 {
+        let item = admin_item(&s, &c, &id).await;
+        if job_state(&item).as_deref() == Some("running") && tmp_file.exists() {
+            running = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(running, "job never reached running with a tmp file");
     let r: Value = c
         .post(s.url(&format!("/admin/api/jobs/{job_id}/cancel")))
         .header(H, &csrf)
@@ -356,15 +403,16 @@ async fn admin_cancel_marks_rendition_failed_and_removes_tmp() {
         .await
         .unwrap();
     assert_eq!(r["cancelled"], true);
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    let gone = wait_for(10, || async { !tmp_file.exists() }).await;
+    assert!(gone, "tmp file left behind");
     let item = admin_item(&s, &c, &id).await;
     assert_eq!(item["renditions"][0]["state"], "failed");
     assert_eq!(item["renditions"][0]["error"], "cancelled");
-    let tmp_file = s
-        .data_dir
-        .path()
-        .join("derived")
-        .join(&id)
-        .join("480p.tmp.mp4");
-    assert!(!tmp_file.exists());
+    assert_eq!(job_state(&item).as_deref(), Some("cancelled"));
+    let leftovers: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap()
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().ends_with(".tmp.mp4"))
+        .collect();
+    assert!(leftovers.is_empty(), "leftover tmp files: {leftovers:?}");
 }
