@@ -117,6 +117,9 @@ async fn clip_page_omits_og_video_when_not_playable() {
     let (st, body) = get_text(&s, &format!("/w/{slug}")).await;
     assert_eq!(st, 200);
     assert!(meta(&body, "og:video").is_none());
+    assert!(body.contains("<source src=\""));
+    assert!(body.contains("/original."));
+    assert!(body.contains("may not play in your browser"));
     assert!(body.contains("name=\"twitter:card\" content=\"summary_large_image\""));
     assert!(meta(&body, "og:image")
         .unwrap()
@@ -296,4 +299,22 @@ async fn images_library_and_page() {
         .unwrap();
     assert_eq!(j["total"], 1);
     assert_eq!(j["items"][0]["kind"], "image");
+}
+
+#[tokio::test]
+async fn library_chips_exclude_link_only_tags() {
+    let s = TestServer::spawn(ENV).await;
+    let (_, a) = up(&s, "alphaclip.mp4").await;
+    let (_, b) = up(&s, "bravoclip.mp4").await;
+    media::set_public(s.db(), std::slice::from_ref(&b), false)
+        .await
+        .unwrap();
+    let shown = tags::create(s.db(), "shownTag", "#20e3a0").await.unwrap();
+    let hidden = tags::create(s.db(), "hiddenTag", "#20e3a0").await.unwrap();
+    tags::attach(s.db(), &a, shown.id).await.unwrap();
+    tags::attach(s.db(), &b, hidden.id).await.unwrap();
+    let (st, body) = get_text(&s, "/").await;
+    assert_eq!(st, 200);
+    assert!(body.contains("shownTag"));
+    assert!(!body.contains("hiddenTag"));
 }

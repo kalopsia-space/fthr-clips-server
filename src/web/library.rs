@@ -377,7 +377,7 @@ async fn library_page(
     let is_video = kind == MediaKind::Video;
     let path = if is_video { "/" } else { "/images" };
     let by_date = matches!(p.sort, Sort::Newest | Sort::Oldest);
-    let all_tags = tags::list_all(&state.db).await?;
+    let all_tags = tags::list_for_public(&state.db, Some(kind)).await?;
     let pages = u32::try_from((listing.total.max(0) as u64).div_ceil(u64::from(PER_PAGE)))
         .unwrap_or(u32::MAX);
     let sort_options = [

@@ -161,3 +161,18 @@ async fn allow_framing_relaxes_frame_headers() {
         .unwrap()
         .ends_with("frame-ancestors *"));
 }
+
+#[test]
+fn ipv4_mapped_ipv6_peer_is_trusted_and_xff_honoured() {
+    let trusted = [net("127.0.0.1/32")];
+    let h = hm(&[("x-forwarded-for", "198.51.100.7")]);
+    assert_eq!(
+        client_ip(&h, ip("::ffff:127.0.0.1"), &trusted),
+        ip("198.51.100.7")
+    );
+    let h = hm(&[("x-forwarded-for", "198.51.100.7, ::ffff:127.0.0.1")]);
+    assert_eq!(
+        client_ip(&h, ip("::ffff:127.0.0.1"), &trusted),
+        ip("198.51.100.7")
+    );
+}

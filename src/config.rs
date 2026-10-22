@@ -185,7 +185,7 @@ impl Config {
             public_base_url: text("PUBLIC_BASE_URL"),
             max_upload_bytes: num("MAX_UPLOAD_BYTES", get("MAX_UPLOAD_BYTES"), 524_288_000)?,
             trusted_proxies,
-            scan_interval_minutes: num("SCAN_INTERVAL_MINUTES", get("SCAN_INTERVAL_MINUTES"), 15)?,
+            scan_interval_minutes: num("SCAN_INTERVAL_MINUTES", get("SCAN_INTERVAL_MINUTES"), 5)?,
             transcoding,
             encoder,
             transcode_workers: num("TRANSCODE_WORKERS", get("TRANSCODE_WORKERS"), 1)?,

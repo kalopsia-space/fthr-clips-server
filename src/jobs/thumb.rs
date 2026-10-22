@@ -27,7 +27,7 @@ pub async fn thumb(state: &AppState, job: &Job) -> anyhow::Result<()> {
             .with_context(|| format!("opening {}", src.display()))?
             .with_guessed_format()?;
         let mut limits = image::Limits::default();
-        limits.max_alloc = Some(64 * 1024 * 1024);
+        limits.max_alloc = Some(256 * 1024 * 1024);
         limits.max_image_width = Some(16384);
         limits.max_image_height = Some(16384);
         reader.limits(limits);

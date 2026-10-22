@@ -40,6 +40,7 @@ pub struct AppState {
     pub settings: Arc<SettingsStore>,
     pub login_limiter: Arc<RateLimiter>,
     pub upload_limiter: Arc<RateLimiter>,
+    pub upload_auth_limiter: Arc<RateLimiter>,
     pub ffmpeg: Arc<Ffmpeg>,
     /// Result of background encoder detection (see [`EncoderState`]).
     pub encoder: Arc<tokio::sync::RwLock<EncoderState>>,
@@ -77,6 +78,7 @@ impl AppState {
             settings,
             login_limiter: Arc::new(RateLimiter::new(10, Duration::from_secs(60))),
             upload_limiter: Arc::new(RateLimiter::new(30, Duration::from_secs(60))),
+            upload_auth_limiter: Arc::new(RateLimiter::new(20, Duration::from_secs(60))),
             ffmpeg,
             encoder: Arc::new(tokio::sync::RwLock::new(EncoderState::Pending)),
             events: new_event_bus(),

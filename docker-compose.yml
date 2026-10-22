@@ -7,7 +7,8 @@ services:
     env_file: .env
     # 1g is enough with TRANSCODING=off; use 2g when transcoding is on.
     mem_limit: 2g
-    pids_limit: 128
+    # Transcoding (libx264 is multi-threaded) needs headroom on many-core hosts.
+    pids_limit: 256
     volumes:
       - clips-data:/data
       # Optional scan folders (set VIDEO_DIRS=/videos and IMAGE_DIRS=/images in .env):

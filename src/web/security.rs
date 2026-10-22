@@ -30,6 +30,7 @@ pub struct AllowFraming;
 
 /// True when `peer` falls inside one of the trusted proxy networks.
 pub fn is_trusted_peer(peer: IpAddr, trusted: &[IpNet]) -> bool {
+    let peer = peer.to_canonical();
     trusted.iter().any(|n| n.contains(&peer))
 }
 
@@ -77,6 +78,7 @@ pub fn client_ip(headers: &HeaderMap, peer: IpAddr, trusted: &[IpNet]) -> IpAddr
             let Some(addr) = parse_hop(hop) else {
                 return peer;
             };
+            let addr = addr.to_canonical();
             if !is_trusted_peer(addr, trusted) {
                 return addr;
             }

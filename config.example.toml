@@ -14,7 +14,7 @@
 
 # video_dirs = ["/videos"]  # default: none
 # image_dirs = ["/images"]  # default: none
-# scan_interval_minutes = 15
+# scan_interval_minutes = 5
 
 # transcoding = "compat"           # off | compat | on
 # encoder = "auto"                 # auto | x264 | nvenc | vaapi | qsv | videotoolbox

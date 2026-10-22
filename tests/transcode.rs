@@ -350,7 +350,7 @@ async fn admin_cancel_marks_rendition_failed_and_removes_tmp() {
         eprintln!("skipped: ffmpeg not found");
         return;
     };
-    let s = server(&[("TRANSCODING", "off")]).await;
+    let s = server(&[("TRANSCODING", "off"), ("ENCODER", "x264")]).await;
     let (c, csrf) = login(&s, PW).await;
     let id = upload_id(&s, "long.mp4", std::fs::read(fx).unwrap()).await;
     assert!(

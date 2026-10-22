@@ -19,6 +19,7 @@ use crate::media::filename_date::recorded_at_from_name;
 use crate::media::ids::{media_id, slug_candidates};
 use crate::media::kind::kind_for;
 use crate::settings::public_base;
+use crate::web::security::client_ip;
 
 const SNIFF_BYTES: usize = 8 * 1024;
 
@@ -75,7 +76,11 @@ impl IntoResponse for UploadError {
             UploadError::MissingField | UploadError::BadRequest => StatusCode::BAD_REQUEST,
             UploadError::Io(_) | UploadError::Db(_) => {
                 tracing::error!("upload failed: {self}");
-                StatusCode::INTERNAL_SERVER_ERROR
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({"error": "internal error"})),
+                )
+                    .into_response();
             }
         };
         (status, self.to_string()).into_response()
@@ -116,8 +121,33 @@ pub async fn authenticate(
     }
 }
 
-pub async fn head_upload(State(state): State<AppState>, headers: HeaderMap) -> StatusCode {
-    match authenticate(&state, &headers).await {
+/// Authenticate, charging the per-IP failure limiter only when auth fails.
+/// Valid tokens are never blocked by it.
+async fn authenticate_throttled(
+    state: &AppState,
+    headers: &HeaderMap,
+    peer: SocketAddr,
+) -> Result<TokenIdentity, StatusCode> {
+    match authenticate(state, headers).await {
+        Ok(id) => Ok(id),
+        Err(StatusCode::UNAUTHORIZED) => {
+            let ip = client_ip(headers, peer.ip(), &state.config.trusted_proxies);
+            if state.upload_auth_limiter.check(&ip.to_string()) {
+                Err(StatusCode::UNAUTHORIZED)
+            } else {
+                Err(StatusCode::TOO_MANY_REQUESTS)
+            }
+        }
+        Err(s) => Err(s),
+    }
+}
+
+pub async fn head_upload(
+    State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+) -> StatusCode {
+    match authenticate_throttled(&state, &headers, peer).await {
         Ok(_) => StatusCode::OK,
         Err(s) => s,
     }
@@ -129,9 +159,15 @@ pub async fn post_upload(
     headers: HeaderMap,
     mut multipart: Multipart,
 ) -> Result<Json<UploadResponse>, UploadError> {
-    let identity = authenticate(&state, &headers)
+    let identity = authenticate_throttled(&state, &headers, peer)
         .await
-        .map_err(UploadError::Auth)?;
+        .map_err(|s| {
+            if s == StatusCode::TOO_MANY_REQUESTS {
+                UploadError::RateLimited
+            } else {
+                UploadError::Auth(s)
+            }
+        })?;
     if !state.upload_limiter.check(&identity.limiter_key()) {
         return Err(UploadError::RateLimited);
     }
