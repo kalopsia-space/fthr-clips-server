@@ -1,4 +1,6 @@
+use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Context;
 use axum::{routing::get, Router};
@@ -7,17 +9,36 @@ use crate::config::Config;
 use crate::db::Db;
 use crate::settings::SettingsStore;
 use crate::web;
+use crate::web::security::{security_headers, RateLimiter};
 
 #[derive(Clone)]
 pub struct AppState {
     pub config: Arc<Config>,
     pub db: Db,
     pub settings: Arc<SettingsStore>,
+    pub login_limiter: Arc<RateLimiter>,
+    pub upload_limiter: Arc<RateLimiter>,
+}
+
+impl AppState {
+    pub fn new(config: Config, db: Db, settings: Arc<SettingsStore>) -> Self {
+        Self {
+            config: Arc::new(config),
+            db,
+            settings,
+            login_limiter: Arc::new(RateLimiter::new(10, Duration::from_secs(60))),
+            upload_limiter: Arc::new(RateLimiter::new(30, Duration::from_secs(60))),
+        }
+    }
 }
 
 pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(web::healthz))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            security_headers,
+        ))
         .with_state(state)
 }
 
@@ -25,16 +46,15 @@ pub async fn serve(config: Config) -> anyhow::Result<()> {
     let addr = format!("{}:{}", config.bind_host, config.port);
     let db = Db::open(&config.data_dir.join("library.db")).await?;
     let settings = Arc::new(SettingsStore::load(&db, &config).await?);
-    let state = AppState {
-        config: Arc::new(config),
-        db,
-        settings,
-    };
+    let state = AppState::new(config, db, settings);
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
         .with_context(|| format!("binding {addr}"))?;
     tracing::info!("listening on {addr}");
-    axum::serve(listener, build_router(state))
-        .await
-        .context("server error")
+    axum::serve(
+        listener,
+        build_router(state).into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .context("server error")
 }

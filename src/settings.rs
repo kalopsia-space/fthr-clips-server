@@ -165,7 +165,7 @@ pub fn public_base(
     {
         return base.to_string();
     }
-    let scheme = if trusted.iter().any(|n| n.contains(&peer)) {
+    let scheme = if crate::web::security::is_trusted_peer(peer, trusted) {
         headers
             .get("x-forwarded-proto")
             .and_then(|v| v.to_str().ok())
