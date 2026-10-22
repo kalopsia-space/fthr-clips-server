@@ -412,7 +412,15 @@ async fn admin_cancel_marks_rendition_failed_and_removes_tmp() {
     let leftovers: Vec<_> = std::fs::read_dir(&dir)
         .unwrap()
         .flatten()
-        .filter(|e| e.file_name().to_string_lossy().ends_with(".tmp.mp4"))
+        // Only the rendition's own temp files count; the preview job may still
+        // be writing `preview.tmp.mp4` for this long fixture.
+        .filter(|e| {
+            let n = e.file_name().to_string_lossy().into_owned();
+            n.starts_with("720p.") && n.ends_with(".tmp.mp4")
+        })
         .collect();
-    assert!(leftovers.is_empty(), "leftover tmp files: {leftovers:?}");
+    assert!(
+        leftovers.is_empty(),
+        "leftover rendition tmp files: {leftovers:?}"
+    );
 }
