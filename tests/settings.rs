@@ -128,3 +128,61 @@ fn public_base_ignores_forwarded_proto_from_untrusted_peer() {
         "https://clips.example.com"
     );
 }
+
+#[tokio::test]
+async fn concurrent_updates_to_different_keys_both_survive() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let db = open(&dir).await;
+    let store = std::sync::Arc::new(SettingsStore::load(&db, &config(&[])).await.unwrap());
+    let mut tasks = Vec::new();
+    for i in 0..20 {
+        let (store, db) = (store.clone(), db.clone());
+        tasks.push(tokio::spawn(async move {
+            let patch = if i % 2 == 0 {
+                json!({"site_title": format!("t{i}")})
+            } else {
+                json!({"upload_folder": format!("f{i}")})
+            };
+            store.update(&db, patch).await.unwrap();
+        }));
+    }
+    for t in tasks {
+        t.await.unwrap();
+    }
+    let s = store.get();
+    assert!(s.site_title.starts_with('t'));
+    assert!(s.upload_folder.starts_with('f'));
+}
+
+#[tokio::test]
+async fn update_equal_to_env_value_still_persists() {
+    let dir = tempfile::TempDir::new().unwrap();
+    {
+        let db = open(&dir).await;
+        let store = SettingsStore::load(&db, &config(&[("SITE_TITLE", "X")]))
+            .await
+            .unwrap();
+        store.update(&db, json!({"site_title": "X"})).await.unwrap();
+    }
+    let db = open(&dir).await;
+    let store = SettingsStore::load(&db, &config(&[("SITE_TITLE", "Y")]))
+        .await
+        .unwrap();
+    assert_eq!(store.get().site_title, "X");
+}
+
+#[tokio::test]
+async fn invalid_stored_row_falls_back_to_default() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let db = open(&dir).await;
+    fthr_clips_server::db::settings::set_json(&db, "scan_interval_minutes", &json!("nope"))
+        .await
+        .unwrap();
+    fthr_clips_server::db::settings::set_json(&db, "site_title", &json!("Kept"))
+        .await
+        .unwrap();
+    let cfg = config(&[("SCAN_INTERVAL_MINUTES", "9")]);
+    let s = SettingsStore::load(&db, &cfg).await.unwrap().get();
+    assert_eq!(s.scan_interval_minutes, 9);
+    assert_eq!(s.site_title, "Kept");
+}

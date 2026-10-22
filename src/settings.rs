@@ -71,6 +71,7 @@ impl Settings {
 pub struct SettingsStore {
     current: RwLock<Arc<Settings>>,
     secret: [u8; 32],
+    update_lock: tokio::sync::Mutex<()>,
 }
 
 impl SettingsStore {
@@ -78,12 +79,17 @@ impl SettingsStore {
         let mut merged = Settings::from_config(config).to_map();
         let rows = store::all(db).await?;
         for (k, v) in &rows {
-            if merged.contains_key(k) {
-                merged.insert(k.clone(), v.clone());
+            let Some(old) = merged.get(k).cloned() else {
+                continue;
+            };
+            merged.insert(k.clone(), v.clone());
+            if serde_json::from_value::<Settings>(Value::Object(merged.clone())).is_err() {
+                tracing::warn!(key = %k, "ignoring invalid stored setting");
+                merged.insert(k.clone(), old);
             }
         }
         let settings: Settings =
-            serde_json::from_value(Value::Object(merged)).context("invalid stored settings")?;
+            serde_json::from_value(Value::Object(merged)).context("invalid default settings")?;
 
         let secret = match rows.get(SECRET_KEY).and_then(Value::as_str) {
             Some(h) => hex::decode(h)
@@ -100,6 +106,7 @@ impl SettingsStore {
         Ok(SettingsStore {
             current: RwLock::new(Arc::new(settings)),
             secret,
+            update_lock: tokio::sync::Mutex::new(()),
         })
     }
 
@@ -118,6 +125,7 @@ impl SettingsStore {
         let Value::Object(patch) = patch else {
             bail!("settings patch must be a JSON object");
         };
+        let _guard = self.update_lock.lock().await;
         let mut merged = self.get().to_map();
         let unknown: Vec<&str> = patch
             .keys()
@@ -129,10 +137,8 @@ impl SettingsStore {
         }
         let mut changed = Vec::new();
         for (k, v) in patch {
-            if merged.get(&k) != Some(&v) {
-                merged.insert(k.clone(), v);
-                changed.push(k);
-            }
+            merged.insert(k.clone(), v);
+            changed.push(k);
         }
         let new: Settings =
             serde_json::from_value(Value::Object(merged.clone())).context("invalid settings")?;
