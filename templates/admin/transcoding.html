@@ -1,0 +1,30 @@
+{% extends "admin/base.html" %}
+{% block admin_body %}
+{% if saved %}<p class="notice ok" role="status">Saved</p>{% endif %}
+{% if !error.is_empty() %}<p class="notice err" role="alert">{{ error }}</p>{% endif %}
+<form class="set-form" method="post" action="/admin/transcoding">
+  <input type="hidden" name="csrf" value="{{ admin_csrf.as_deref().unwrap_or("") }}">
+  <label class="set-row"><span class="set-label">Transcoding</span><select name="transcoding">
+    <option value="off"{% if s.transcoding == "off" %} selected{% endif %}>Off</option>
+    <option value="compat"{% if s.transcoding == "compat" %} selected{% endif %}>Compatibility only</option>
+    <option value="on"{% if s.transcoding == "on" %} selected{% endif %}>On</option>
+  </select></label>
+  <label class="set-row"><span class="set-label">Encoder</span><select name="encoder">
+    <option value="auto"{% if s.encoder == "auto" %} selected{% endif %}>Auto</option>
+    <option value="x264"{% if s.encoder == "x264" %} selected{% endif %}>x264 (CPU)</option>
+    <option value="nvenc"{% if s.encoder == "nvenc" %} selected{% endif %}>NVENC</option>
+    <option value="vaapi"{% if s.encoder == "vaapi" %} selected{% endif %}>VAAPI</option>
+    <option value="qsv"{% if s.encoder == "qsv" %} selected{% endif %}>Quick Sync</option>
+    <option value="videotoolbox"{% if s.encoder == "videotoolbox" %} selected{% endif %}>VideoToolbox</option>
+  </select></label>
+  <div class="set-row"><span class="set-label">Detected encoder</span><span class="set-ro">{% if effective_encoder.is_empty() %}not detected yet{% else %}{{ effective_encoder }}{% endif %}</span></div>
+  <fieldset class="set-row"><legend class="set-label">Quality ladder</legend>
+    <label class="check"><input type="checkbox" name="ladder" value="480"{% if s.ladder_480 %} checked{% endif %}><span>480p</span></label>
+    <label class="check"><input type="checkbox" name="ladder" value="720"{% if s.ladder_720 %} checked{% endif %}><span>720p</span></label>
+    <label class="check"><input type="checkbox" name="ladder" value="1080"{% if s.ladder_1080 %} checked{% endif %}><span>1080p</span></label>
+  </fieldset>
+  <label class="set-row"><span class="set-label">Workers (1 to 8)</span><input type="number" name="transcode_workers" min="1" max="8" value="{{ s.transcode_workers }}"></label>
+  <label class="set-row"><span class="set-label">Timeout (minutes)</span><input type="number" name="transcode_timeout_minutes" min="1" max="1440" value="{{ s.transcode_timeout_minutes }}"></label>
+  <div class="set-actions"><button class="btn primary" type="submit">Save</button></div>
+</form>
+{% endblock %}
