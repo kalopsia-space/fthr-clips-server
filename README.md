@@ -58,8 +58,10 @@ docker run -d --name fthr-clips \
   -e PUBLIC_BASE_URL=https://clips.example.com \
   -p 127.0.0.1:18080:8080 \
   -v clips-data:/data \
-  ghcr.io/kalopsia-space/fthr-clips-server:latest
+  ghcr.io/kalopsia-space/fthr-clips-server:edge
 ```
+
+`edge` is the newest release, pre-releases included; `latest` only moves on stable releases, and there hasn't been a stable 2.x yet. Pin a version tag such as `2.0.0-alpha.1` if you'd rather upgrade by hand.
 
 The image bundles `ffmpeg`, runs as a non-root user, keeps everything under `/data` and has a health check. Put a reverse proxy with TLS in front of port 18080 and you're done. There's a [`docker-compose.yml`](docker-compose.yml) with sensible hardening if you prefer compose.
 

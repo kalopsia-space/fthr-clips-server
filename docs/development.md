@@ -53,7 +53,7 @@ The frontend is server-rendered HTML with a small amount of plain JavaScript and
 
 ## Releases
 
-Pushing a tag like `v2.1.0` runs the release workflow: it cross-compiles static binaries for `x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl`, attaches them to a GitHub release, and publishes a `linux/amd64` + `linux/arm64` image to `ghcr.io/kalopsia-space/fthr-clips-server`. Tags without a pre-release suffix also move the `latest` image tag.
+Pushing a tag like `v2.1.0` runs the release workflow: it cross-compiles static binaries for `x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl`, attaches them to a GitHub release, and publishes a `linux/amd64` + `linux/arm64` image to `ghcr.io/kalopsia-space/fthr-clips-server`. Every release moves the `edge` image tag; tags without a pre-release suffix also move `latest` and the `X.Y` tag.
 
 Linux and Docker are the supported platforms. The code keeps its platform gates and may well build elsewhere, but nothing else is tested.
 

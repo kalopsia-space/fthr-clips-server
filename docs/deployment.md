@@ -20,8 +20,10 @@ docker run -d --name fthr-clips \
   -e PUBLIC_BASE_URL=https://clips.example.com \
   -p 127.0.0.1:18080:8080 \
   -v clips-data:/data \
-  ghcr.io/kalopsia-space/fthr-clips-server:latest
+  ghcr.io/kalopsia-space/fthr-clips-server:edge
 ```
+
+Image tags: `edge` follows every release, pre-releases included; `latest` follows stable releases only; `X.Y.Z` (and `X.Y` for stable releases) pin a version. Until 2.0.0 ships, use `edge` or a pinned pre-release tag.
 
 What the image does for you:
 
